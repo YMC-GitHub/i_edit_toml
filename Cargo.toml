@@ -1,0 +1,37 @@
+[package]
+name = "toml_extract"
+version = "0.1.0"
+edition = "2021"
+description = "A lightweight, high-performance TOML field extraction tool for CLI and library usage"
+authors = ["YeMiancheng <ymc.github@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/YeMiancheng/toml_extract"
+readme = "README.md"
+keywords = ["toml", "extract", "cli", "config", "parser", "configuration"]
+categories = ["command-line-utilities", "development-tools", "configuration"]
+documentation = "https://docs.rs/toml_extract"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+serde_json = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.3"
+assert_cmd = "2.0"
+predicates = "3.0"
+
+[[bin]]
+name = "toml_extract"
+path = "src/main.rs"
+
+[lib]
+name = "toml_extract"
+path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+rustdoc-args = ["--cfg", "docsrs"]
