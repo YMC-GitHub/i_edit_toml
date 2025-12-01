@@ -10,6 +10,13 @@ pub use error::TomlExtractError;
 pub mod types; // 2
 pub use types::{ExtractConfig, ExtractionResult};
 
+pub mod utils;  // 3
+pub use utils::strip_quotes;  // 保留公共API的strip_quotes
+#[allow(unused_imports)]
+use utils::{
+    format_output, get_nested_value, strip_quotes_internal, to_json_value,
+};
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
@@ -17,6 +24,8 @@ use std::fs;
 // remove code for extracting to error module
 // ...
 // remove code for extracting to types module
+// ...
+// remove code for extracting to utils module
 // ...
 
 /// Extract a field from a TOML file
@@ -387,115 +396,6 @@ pub fn get_package_categories(
     }
 }
 
-fn get_nested_value<'a>(value: &'a toml::Value, path: &str) -> Result<&'a toml::Value> {
-    let mut current = value;
-
-    for part in path.split('.') {
-        // 检查是否是数组访问语法 [index]
-        if part.contains('[') && part.ends_with(']') {
-            let bracket_start = part.find('[').unwrap();
-            let array_name = &part[..bracket_start];
-            let index_part = &part[bracket_start + 1..part.len() - 1];
-
-            // 获取数组
-            current = current
-                .get(array_name)
-                .context(format!("Array not found: {}", array_name))?;
-
-            let array = current
-                .as_array()
-                .context(TomlExtractError::NotAnArray(array_name.to_string()))?;
-
-            // 解析索引
-            let index: usize = index_part
-                .parse()
-                .map_err(|_| TomlExtractError::InvalidArrayIndex(index_part.to_string()))?;
-
-            if index >= array.len() {
-                return Err(TomlExtractError::ArrayIndexOutOfBounds {
-                    path: array_name.to_string(),
-                    index,
-                    length: array.len(),
-                }
-                .into());
-            }
-
-            current = &array[index];
-        } else {
-            // 普通字段访问
-            current = current
-                .get(part)
-                .context(format!("Key not found: {}", part))?;
-        }
-    }
-
-    Ok(current)
-}
-
-fn format_output(value: &toml::Value, format: Option<&str>) -> Result<String> {
-    match format {
-        Some("json") => {
-            let json_value = to_json_value(value);
-            serde_json::to_string(&json_value).context("Failed to convert to JSON")
-        }
-        Some("json-pretty") => {
-            let json_value = to_json_value(value);
-            serde_json::to_string_pretty(&json_value).context("Failed to convert to JSON")
-        }
-        _ => Ok(value.to_string()),
-    }
-}
-
-fn to_json_value(toml_value: &toml::Value) -> serde_json::Value {
-    match toml_value {
-        toml::Value::String(s) => serde_json::Value::String(s.clone()),
-        toml::Value::Integer(i) => serde_json::Value::Number((*i).into()),
-        toml::Value::Float(f) => {
-            if let Some(n) = serde_json::Number::from_f64(*f) {
-                serde_json::Value::Number(n)
-            } else {
-                serde_json::Value::Null
-            }
-        }
-        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
-        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
-        toml::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(to_json_value).collect())
-        }
-        toml::Value::Table(table) => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in table {
-                map.insert(k.clone(), to_json_value(v));
-            }
-            serde_json::Value::Object(map)
-        }
-    }
-}
-
-/// Strip quotes from a string value
-///
-/// # Arguments
-/// * `value` - The string value to strip quotes from
-///
-/// # Returns
-/// String with surrounding quotes removed
-///
-/// # Examples
-/// ```
-/// use toml_code::strip_quotes;
-///
-/// let quoted = "\"hello\"";
-/// let unquoted = strip_quotes(quoted);
-/// assert_eq!(unquoted, "hello");
-/// ```
-pub fn strip_quotes(value: &str) -> String {
-    value.trim_matches('"').to_string()
-}
-
-// Internal function to avoid naming conflict with the public function
-fn strip_quotes_internal(value: &str) -> String {
-    strip_quotes(value)
-}
 
 #[cfg(test)]
 mod tests {
