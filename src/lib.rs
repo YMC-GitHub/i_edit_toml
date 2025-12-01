@@ -3,42 +3,15 @@
 //! This crate provides functionality to extract specific fields from TOML files
 //! with support for nested keys, arrays, and multiple output formats.
 
+pub mod error; // 新增：引入error模块
+use error::TomlExtractError; // 新增：使用模块中的错误类型
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::fs;
-use thiserror::Error;
 
-/// Error types for TOML extraction operations
-#[derive(Error, Debug)]
-pub enum TomlExtractError {
-    #[error("File not found: {0}")]
-    FileNotFound(String),
-
-    #[error("Invalid TOML syntax in {file}: {error}")]
-    InvalidToml { file: String, error: String },
-
-    #[error("Field not found: {0}")]
-    FieldNotFound(String),
-
-    #[error("Array index out of bounds: {path}[{index}], array length: {length}")]
-    ArrayIndexOutOfBounds {
-        path: String,
-        index: usize,
-        length: usize,
-    },
-
-    #[error("Not an array: {0}")]
-    NotAnArray(String),
-
-    #[error("Invalid array index: {0}")]
-    InvalidArrayIndex(String),
-
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("JSON serialization error: {0}")]
-    JsonError(#[from] serde_json::Error),
-}
+// remove code for extracting to error module
+// ...
 
 /// Configuration for field extraction
 #[derive(Debug, Clone)]
