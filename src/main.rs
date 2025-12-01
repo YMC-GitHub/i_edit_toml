@@ -1,17 +1,17 @@
-//! Command-line interface for toml-extract
+//! Command-line interface for toml_code
 //!
 //! A lightweight tool for extracting fields from TOML files.
 
 use anyhow::Result;
 use clap::{Arg, Command};
-use toml_extract::{
+use toml_code::{
     extract_array, extract_array_element, extract_array_length, extract_field,
     extract_multiple_fields, get_dependencies, get_package_authors, get_package_categories,
     get_package_keywords, get_package_name, get_package_version, ExtractConfig,
 };
 
 fn main() -> Result<()> {
-    let matches = Command::new("toml-extract")
+    let matches = Command::new("toml_code")
         .version(env!("CARGO_PKG_VERSION"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .author("YeMiancheng <ymc.github@gmail.com>")

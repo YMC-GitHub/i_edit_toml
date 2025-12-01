@@ -125,7 +125,7 @@ impl ExtractionResult {
 ///
 /// # Examples
 /// ```
-/// use toml_extract::{extract_field, ExtractConfig};
+/// use toml_code::{extract_field, ExtractConfig};
 ///
 /// let config = ExtractConfig {
 ///     file_path: "Cargo.toml".to_string(),
@@ -168,7 +168,7 @@ pub fn extract_field(config: &ExtractConfig) -> Result<String> {
 ///
 /// # Examples
 /// ```
-/// use toml_extract::extract_multiple_fields;
+/// use toml_code::extract_multiple_fields;
 ///
 /// let fields = vec!["package.name".to_string(), "package.version".to_string()];
 /// let result = extract_multiple_fields("Cargo.toml", &fields, false);
@@ -212,7 +212,7 @@ pub fn extract_multiple_fields(
 ///
 /// # Examples
 /// ```
-/// use toml_extract::extract_array;
+/// use toml_code::extract_array;
 ///
 /// let result = extract_array("Cargo.toml", "package.authors", None);
 /// assert!(result.is_ok());
@@ -249,7 +249,7 @@ pub fn extract_array(
 ///
 /// # Examples
 /// ```
-/// use toml_extract::extract_array_length;
+/// use toml_code::extract_array_length;
 ///
 /// let result = extract_array_length("Cargo.toml", "package.authors");
 /// assert!(result.is_ok());
@@ -284,7 +284,7 @@ pub fn extract_array_length(file_path: &str, array_path: &str) -> Result<usize> 
 ///
 /// # Examples
 /// ```
-/// use toml_extract::extract_array_element;
+/// use toml_code::extract_array_element;
 ///
 /// let result = extract_array_element("Cargo.toml", "package.authors", 0, true);
 /// assert!(result.is_ok());
@@ -335,7 +335,7 @@ pub fn extract_array_element(
 ///
 /// # Examples
 /// ```
-/// use toml_extract::get_package_name;
+/// use toml_code::get_package_name;
 ///
 /// let package_name = get_package_name(None).unwrap();
 /// println!("Package name: {}", package_name);
@@ -571,7 +571,7 @@ fn to_json_value(toml_value: &toml::Value) -> serde_json::Value {
 ///
 /// # Examples
 /// ```
-/// use toml_extract::strip_quotes;
+/// use toml_code::strip_quotes;
 ///
 /// let quoted = "\"hello\"";
 /// let unquoted = strip_quotes(quoted);
