@@ -1,12 +1,12 @@
-//! CLI entry point for toml_code - a TOML field extraction and manipulation tool
+//! CLI entry point for toml_path - a TOML field extraction and manipulation tool
 
 use anyhow::{Context, Result};
 use clap::Command;
-use toml_code::{get::xcli::get_command, set::xcli::cli as set_command};
+use toml_path::{get::xcli::get_command, set::xcli::cli as set_command};
 
 fn main() -> Result<()> {
     // Define main CLI structure
-    let mut app = Command::new("toml_code")
+    let mut app = Command::new("toml_path")
         .version(env!("CARGO_PKG_VERSION"))
         .author("YeMiancheng <ymc.github@gmail.com>")
         .about("A lightweight, high-performance TOML field extraction and manipulation tool")
@@ -19,11 +19,11 @@ fn main() -> Result<()> {
     // Dispatch to appropriate subcommand handler
     match matches.subcommand() {
         Some(("get", sub_matches)) => {
-            toml_code::get::xcli::handle_get_command(sub_matches)
+            toml_path::get::xcli::handle_get_command(sub_matches)
                 .context("Failed to execute get command")?;
         }
         Some(("set", sub_matches)) => {
-            toml_code::set::xcli::handle_set_command(sub_matches)
+            toml_path::set::xcli::handle_set_command(sub_matches)
                 .context("Failed to execute set command")?;
         }
         _ => {

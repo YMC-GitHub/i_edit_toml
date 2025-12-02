@@ -1,15 +1,15 @@
 [package]
-name = "toml_code"
+name = "toml_path"
 version = "0.2.0"
 edition = "2021"
 description = "A lightweight, high-performance TOML field extraction and manipulation tool"
 authors = ["YeMiancheng <ymc.github@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/YeMiancheng/toml_code"
+repository = "https://github.com/YeMiancheng/toml_path"
 readme = "README.md"
-keywords = ["toml", "edit", "set", "cli", "config", "parser", "manipulation"]
+keywords = ["toml_path", "edit","cli"]
 categories = ["command-line-utilities", "development-tools", "configuration"]
-documentation = "https://docs.rs/toml_code"
+documentation = "https://docs.rs/toml_path"
 
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
@@ -26,11 +26,11 @@ assert_cmd = "2.0"
 predicates = "3.0"
 
 [[bin]]
-name = "toml_code"
+name = "toml_path"
 path = "src/main.rs"
 
 [lib]
-name = "toml_code"
+name = "toml_path"
 path = "src/lib.rs"
 
 [package.metadata.docs.rs]
