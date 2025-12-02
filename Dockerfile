@@ -51,7 +51,7 @@ WORKDIR /app
 
 # 复制项目文件（包括可能的 binary-name.txt）
 COPY Cargo.toml ./
-COPY binary-name.txt binary-name.txt 2>/dev/null || true
+# COPY binary-name.txt binary-name.txt 2>/dev/null || true
 
 # 确定二进制名称：优先使用 binary-name.txt，否则使用 BINARY_NAME 参数
 RUN if [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
@@ -151,7 +151,7 @@ WORKDIR /app
 
 # 只复制必要的配置
 COPY Cargo.toml Cargo.lock ./
-COPY binary-name.txt binary-name.txt 2>/dev/null || true
+# COPY binary-name.txt binary-name.txt 2>/dev/null || true
 
 # 确定二进制名称：优先使用 binary-name.txt，否则使用 BINARY_NAME 参数
 RUN if [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
@@ -230,6 +230,11 @@ RUN BINARY_NAME=$(cat /binary-name.txt) && \
     echo "=== Static Link Check ===" && \
     ldd target/x86_64-unknown-linux-musl/release/${BINARY_NAME} 2>&1 | head -3
 
+# 准备最终二进制文件（重命名为 "app" 以便在 scratch 中使用）
+RUN BINARY_NAME=$(cat /binary-name.txt) && \
+    cp target/x86_64-unknown-linux-musl/release/${BINARY_NAME} /binary && \
+    echo "Final binary prepared at /binary"
+
 # =============================================
 # 阶段3: 证书准备阶段
 # =============================================
@@ -261,10 +266,6 @@ ARG RUST_MIRROR
 ARG BINARY_NAME
 
 
-
-# 从构建阶段获取二进制名称
-COPY --from=builder /binary-name.txt /binary-name.txt
-
 # 复制 SSL 证书（必须，因为你的应用需要 HTTPS）
 # COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -274,15 +275,15 @@ COPY --from=builder /binary-name.txt /binary-name.txt
 
 # 复制二进制文件
 WORKDIR /app
-RUN BINARY_NAME=$(cat /binary-name.txt) && \
-    COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/${BINARY_NAME} /app/app
+COPY --from=builder /binary /app/app
+
 
 # 健康检查
 # HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 #     CMD [ "/app/app", "--version" ] || exit 1
 
 # 设置入口点
-ENTRYPOINT ["/app/app"]
+# ENTRYPOINT ["/app/app"]
 
 # =============================================
 # 阶段5: 最终运行镜像（scratch）
@@ -295,11 +296,6 @@ ARG ALPINE_MIRROR
 ARG RUST_MIRROR
 ARG BINARY_NAME
 
-
-
-# 从构建阶段获取二进制名称
-COPY --from=builder /binary-name.txt /binary-name.txt
-
 # 复制 SSL 证书（必须，因为你的应用需要 HTTPS）
 # COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
@@ -309,8 +305,7 @@ COPY --from=builder /binary-name.txt /binary-name.txt
 
 # 复制二进制文件
 WORKDIR /app
-RUN BINARY_NAME=$(cat /binary-name.txt) && \
-    COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/${BINARY_NAME} /app/app
+COPY --from=builder /binary /app/app
 
 # 健康检查
 # HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
