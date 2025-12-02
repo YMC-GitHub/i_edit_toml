@@ -7,7 +7,7 @@ ARG USE_CHINA_MIRROR=false
 ARG ALPINE_MIRROR=mirrors.aliyun.com
 ARG RUST_MIRROR=ustc
 # 新增：二进制名称参数
-ARG BINARY_NAME=xbin
+ARG BINARY_NAME
 
 
 
@@ -53,13 +53,20 @@ WORKDIR /app
 COPY Cargo.toml ./
 # COPY binary-name.txt binary-name.txt 2>/dev/null || true
 
-# 确定二进制名称：优先使用 binary-name.txt，否则使用 BINARY_NAME 参数
-RUN if [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
+# 确定二进制名称的优先级：
+# 1. 如果提供了 BINARY_NAME 参数，使用它
+# 2. 否则如果有 binary-name.txt 文件，使用它
+# 3. 否则从 Cargo.toml 的 name 字段提取
+RUN if [ -n "$BINARY_NAME" ]; then \
+        echo "📦 Using provided binary name from build arg: $BINARY_NAME"; \
+    elif [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
         BINARY_NAME=$(cat binary-name.txt | xargs) && \
         echo "📦 Using binary name from binary-name.txt: $BINARY_NAME"; \
-    elif [ -n "$BINARY_NAME" ] && [ "$BINARY_NAME" != "xbin" ]; then \
-        echo "📦 Using provided binary name: $BINARY_NAME"; \
+    elif [ -f "Cargo.toml" ]; then \
+        BINARY_NAME=$(grep -E '^name\s*=' Cargo.toml | head -1 | sed -E 's/^name\s*=\s*"([^"]+)".*/\1/' || echo "app") && \
+        echo "📦 Using crate name from Cargo.toml: $BINARY_NAME"; \
     else \
+        BINARY_NAME="app" && \
         echo "📦 Using default binary name: $BINARY_NAME"; \
     fi && \
     echo "$BINARY_NAME" > /binary-name.txt
@@ -153,13 +160,20 @@ WORKDIR /app
 COPY Cargo.toml ./
 # COPY binary-name.txt binary-name.txt 2>/dev/null || true
 
-# 确定二进制名称：优先使用 binary-name.txt，否则使用 BINARY_NAME 参数
-RUN if [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
+# 确定二进制名称的优先级（与 development 阶段相同）：
+# 1. 如果提供了 BINARY_NAME 参数，使用它
+# 2. 否则如果有 binary-name.txt 文件，使用它
+# 3. 否则从 Cargo.toml 的 name 字段提取
+RUN if [ -n "$BINARY_NAME" ]; then \
+        echo "📦 Using provided binary name from build arg: $BINARY_NAME"; \
+    elif [ -f "binary-name.txt" ] && [ -s "binary-name.txt" ]; then \
         BINARY_NAME=$(cat binary-name.txt | xargs) && \
         echo "📦 Using binary name from binary-name.txt: $BINARY_NAME"; \
-    elif [ -n "$BINARY_NAME" ] && [ "$BINARY_NAME" != "xbin" ]; then \
-        echo "📦 Using provided binary name: $BINARY_NAME"; \
+    elif [ -f "Cargo.toml" ]; then \
+        BINARY_NAME=$(grep -E '^name\s*=' Cargo.toml | head -1 | sed -E 's/^name\s*=\s*"([^"]+)".*/\1/' || echo "app") && \
+        echo "📦 Using crate name from Cargo.toml: $BINARY_NAME"; \
     else \
+        BINARY_NAME="app" && \
         echo "📦 Using default binary name: $BINARY_NAME"; \
     fi && \
     echo "$BINARY_NAME" > /binary-name.txt
