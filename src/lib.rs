@@ -1,23 +1,20 @@
-//! A lightweight, high-performance TOML field extraction library.
+//! A lightweight, high-performance TOML field extraction and manipulation tool.
 //!
-//! This crate provides functionality to extract specific fields from TOML files
-//! with support for nested keys, arrays, and multiple output formats.
+//! This library provides functionality to read and modify TOML files through
+//! intuitive field paths, supporting nested structures, arrays, and type-aware
+//! value handling. It can be used both as a standalone CLI tool and as a library
+//! in other Rust projects.
 
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub mod error; // 1
+/// Error types and handling for TOML operations.
+pub mod error;
 pub use error::TomlExtractError;
 
-pub mod types; // 2
-pub use types::{ExtractConfig, ExtractionResult};
+pub mod get;
+pub mod set;
 
-pub mod utils;  // 3
-pub use utils::strip_quotes;  // 保留公共API的strip_quotes
-
-// #[allow(unused_imports)]
-// use utils::{format_output, get_nested_value, strip_quotes_internal, to_json_value,};
-
-pub mod extract; // 4
-pub use extract::*;
-
-pub mod extract_preset; // 5
-pub use extract_preset::*;
+// Re-export core types for convenience
+pub use get::types::ExtractConfig;
+pub use set::types::SetConfig;
