@@ -145,3 +145,68 @@ pub fn set_field_and_save(config: &SetConfig) -> Result<()> {
         .with_context(|| format!("Failed to write to file: {}", config.file_path))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    // use toml::Value as TomlValue;
+    use std::io::Write; 
+
+    #[test]
+    fn test_set_field_basic() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "[package]\nname = \"old\"").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let config = SetConfig {
+            file_path: path.to_string(),
+            field_path: "package.name".to_string(),
+            value: "new".to_string(),
+            value_type: None,
+            create_missing: false,
+        };
+
+        let updated = set_field(&config).unwrap();
+        assert!(updated.contains("name = \"new\""));
+    }
+
+    #[test]
+    fn test_set_array_element() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "authors = [\"Alice\", \"Bob\"]").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let config = SetConfig {
+            file_path: path.to_string(),
+            field_path: "authors[0]".to_string(),
+            value: "Charlie".to_string(),
+            value_type: None,
+            create_missing: false,
+        };
+
+        let updated = set_field(&config).unwrap();
+        // eprintln!("Updated content: {}", updated);
+        // assert!(updated.contains("[\"Charlie\", \"Bob\"]"));
+        assert!(updated.contains("\"Charlie\",\n    \"Bob\""));
+
+    }
+
+    #[test]
+    fn test_create_missing_field() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "[package]").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let config = SetConfig {
+            file_path: path.to_string(),
+            field_path: "package.description".to_string(),
+            value: "test desc".to_string(),
+            value_type: None,
+            create_missing: true,
+        };
+
+        let updated = set_field(&config).unwrap();
+        assert!(updated.contains("description = \"test desc\""));
+    }
+}

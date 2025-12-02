@@ -79,3 +79,40 @@ pub fn parse_value_with_type(value: &str, value_type: Option<&str>) -> Result<To
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_field_path() {
+        assert_eq!(
+            split_field_path("package.name").unwrap(),
+            vec!["package".to_string(), "name".to_string()]
+        );
+        
+        assert_eq!(
+            split_field_path("dependencies.serde.features[0]").unwrap(),
+            vec![
+                "dependencies".to_string(),
+                "serde".to_string(),
+                "features[0]".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_value_with_type() {
+        assert!(matches!(parse_value_with_type("42", Some("integer")).unwrap(), TomlValue::Integer(42)));
+        assert!(matches!(parse_value_with_type("3.14", Some("float")).unwrap(), TomlValue::Float(3.14)));
+        assert!(matches!(parse_value_with_type("true", Some("boolean")).unwrap(), TomlValue::Boolean(true)));
+        assert!(matches!(parse_value_with_type("text", Some("string")).unwrap(), TomlValue::String(s) if s == "text"));
+    }
+
+    #[test]
+    fn test_parse_value_auto() {
+        assert!(matches!(parse_value_with_type("100", None).unwrap(), TomlValue::Integer(100)));
+        assert!(matches!(parse_value_with_type("false", None).unwrap(), TomlValue::Boolean(false)));
+        assert!(matches!(parse_value_with_type("hello", None).unwrap(), TomlValue::String(s) if s == "hello"));
+    }
+}

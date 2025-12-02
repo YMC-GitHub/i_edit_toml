@@ -108,3 +108,48 @@ pub fn strip_quotes_internal(s: &str) -> String {
 pub fn strip_quotes(s: &str) -> String {
     strip_quotes_internal(s)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use toml::Value as TomlValue;
+
+    #[test]
+    fn test_get_nested_value() {
+        let toml_str = r#"
+            [package]
+            name = "test"
+            [dependencies.serde]
+            version = "1.0"
+            features = ["derive"]
+            [array]
+            items = [1, 2, 3]
+        "#;
+        let value: TomlValue = toml::from_str(toml_str).unwrap();
+
+        // 测试普通字段
+        assert_eq!(get_nested_value(&value, "package.name").unwrap(), &TomlValue::String("test".into()));
+        
+        // 测试嵌套字段
+        assert_eq!(get_nested_value(&value, "dependencies.serde.version").unwrap(), &TomlValue::String("1.0".into()));
+        
+        // 测试数组
+        assert_eq!(get_nested_value(&value, "array.items[1]").unwrap(), &TomlValue::Integer(2));
+    }
+
+    #[test]
+    fn test_strip_quotes_internal() {
+        assert_eq!(strip_quotes_internal("\"hello\""), "hello");
+        assert_eq!(strip_quotes_internal("'world'"), "world");
+        assert_eq!(strip_quotes_internal("no_quotes"), "no_quotes");
+    }
+
+    #[test]
+    fn test_to_json_value() {
+        let toml_value = TomlValue::Integer(42);
+        assert_eq!(to_json_value(&toml_value).unwrap(), serde_json::Value::Number(42.into()));
+
+        let toml_value = TomlValue::String("test".into());
+        assert_eq!(to_json_value(&toml_value).unwrap(), serde_json::Value::String("test".into()));
+    }
+}

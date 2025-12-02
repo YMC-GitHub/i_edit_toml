@@ -306,3 +306,78 @@ pub fn get_package_categories(
         extract_array(path, "package.categories", None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use std::collections::HashMap;
+    use std::io::Write; 
+
+    #[test]
+    fn test_extract_field_basic() {
+        // 创建临时 TOML 文件
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "[package]\nname = \"test\"").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        // 测试提取逻辑
+        let config = ExtractConfig {
+            file_path: path.to_string(),
+            field_path: "package.name".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(extract_field(&config).unwrap(), "\"test\"");
+    }
+
+    #[test]
+    fn test_extract_field_strip_quotes() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "version = \"1.0.0\"").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let config = ExtractConfig {
+            file_path: path.to_string(),
+            field_path: "version".to_string(),
+            strip_quotes: true,
+            ..Default::default()
+        };
+        assert_eq!(extract_field(&config).unwrap(), "1.0.0");
+    }
+
+    #[test]
+    fn test_extract_multiple_fields() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "[package]\nname = \"test\"\nversion = \"1.0.0\"").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let fields = vec!["package.name".to_string(), "package.version".to_string()];
+        let result = extract_multiple_fields(path, &fields, false).unwrap();
+        
+        assert_eq!(result.get("package.name"), Some(&"\"test\"".to_string()));
+        assert_eq!(result.get("package.version"), Some(&"\"1.0.0\"".to_string()));
+    }
+
+    #[test]
+    fn test_extract_array_length() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "authors = [\"Alice\", \"Bob\"]").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        assert_eq!(extract_array_length(path, "authors").unwrap(), 2);
+    }
+
+    #[test]
+    fn test_get_dependencies() {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "[dependencies]\nserde = \"1.0\"\ntoml = {{ version = \"0.8\" }}").unwrap();
+        let path = temp_file.path().to_str().unwrap();
+
+        let deps = get_dependencies(Some(path)).unwrap();
+        let expected = HashMap::from([
+            ("serde".to_string(), "1.0".to_string()),
+            ("toml".to_string(), "0.8".to_string())
+        ]);
+        assert_eq!(deps, expected);
+    }
+}
