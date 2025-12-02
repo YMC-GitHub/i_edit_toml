@@ -283,7 +283,7 @@ COPY --from=builder /binary /app/app
 #     CMD [ "/app/app", "--version" ] || exit 1
 
 # 设置入口点
-# ENTRYPOINT ["/app/app"]
+ENTRYPOINT ["/app/app"]
 
 # =============================================
 # 阶段5: 最终运行镜像（scratch）
