@@ -1,0 +1,369 @@
+name: Multi-Platform Build and Release
+
+on:
+  push:
+    # tags:
+    #   - 'v*'  # 推送 v 开头的标签时触发
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      debug_mode:
+        description: 'Enable debug mode (save artifacts without release)'
+        required: false
+        default: false
+        type: boolean
+      enable_release:
+        description: 'Enable GitHub Release creation'
+        required: false
+        default: true
+        type: boolean
+      platforms:
+        description: 'Platforms to build (comma-separated)'
+        required: false
+        default: 'windows,linux,macos'
+        type: string
+      architectures:
+        description: 'Architectures to build (comma-separated)'
+        required: false
+        default: 'x86_64'
+        type: string
+
+env:
+  BINARY_NAME: ${{ github.event.repository.name }}
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Windows 目标
+          - os: windows-latest
+            arch: x86_64
+            targets: [x86_64-pc-windows-msvc, x86_64-pc-windows-gnu]
+            file_extension: .exe
+          
+          # Linux 目标
+          - os: ubuntu-latest
+            arch: x86_64
+            targets: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
+            file_extension: ""
+          
+          # macOS 目标
+          - os: macos-latest
+            arch: x86_64
+            targets: [x86_64-apple-darwin]
+            file_extension: ""
+          
+          # ARM 目标（交叉编译）
+          - os: ubuntu-latest
+            arch: aarch64
+            targets: [aarch64-unknown-linux-gnu, aarch64-unknown-linux-musl]
+            file_extension: ""
+          
+          - os: ubuntu-latest
+            arch: armv7
+            targets: [armv7-unknown-linux-gnueabihf]
+            file_extension: ""
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup build matrix
+        id: matrix
+        run: |
+          # 解析用户输入的平台和架构
+          PLATFORMS="${{ inputs.platforms }}"
+          ARCHITECTURES="${{ inputs.architectures }}"
+          
+          echo "Requested platforms: $PLATFORMS"
+          echo "Requested architectures: $ARCHITECTURES"
+          
+          # 检查当前组合是否在请求中
+          if [[ " $PLATFORMS " == *" ${{ matrix.os }} "* ]] || [[ "$PLATFORMS" == "all" ]]; then
+            if [[ " $ARCHITECTURES " == *" ${{ matrix.arch }} "* ]] || [[ "$ARCHITECTURES" == "all" ]]; then
+              echo "✅ Building for ${{ matrix.os }}-${{ matrix.arch }}"
+              echo "build_this=true" >> $GITHUB_OUTPUT
+            else
+              echo "❌ Skipping ${{ matrix.arch }} (not in requested architectures)"
+              echo "build_this=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "❌ Skipping ${{ matrix.os }} (not in requested platforms)"
+            echo "build_this=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.matrix.outputs.build_this == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ join(matrix.targets, ',') }}
+          # 为交叉编译安装必要的组件
+          ${{ matrix.arch != 'x86_64' && 'components: rust-std-' || '' }}
+
+      - name: Install cross-compilation tools (Linux -> other arches)
+        if: steps.matrix.outputs.build_this == 'true' && runner.os == 'Linux' && matrix.arch != 'x86_64'
+        run: |
+          echo "Installing cross-compilation tools for ${{ matrix.arch }}..."
+          sudo apt-get update
+          
+          case "${{ matrix.arch }}" in
+            aarch64)
+              sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+              ;;
+            armv7)
+              sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+              ;;
+          esac
+
+      - name: Cache cargo registry
+        if: steps.matrix.outputs.build_this == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-cargo
+
+      - name: Build for all targets
+        if: steps.matrix.outputs.build_this == 'true'
+        run: |
+          echo "🏗️ Building for ${{ matrix.os }} (${{ matrix.arch }})"
+          echo "Targets: ${{ join(matrix.targets, ', ') }}"
+          
+          for target in ${{ join(matrix.targets, ' ') }}; do
+            echo "Building for target: $target"
+            
+            # 设置交叉编译环境变量
+            case "$target" in
+              aarch64-unknown-linux-gnu)
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+                ;;
+              armv7-unknown-linux-gnueabihf)
+                export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+                ;;
+            esac
+            
+            cargo build --release --target $target
+            
+            echo "📁 Build output for $target:"
+            if [[ "${{ runner.os }}" == "Windows" ]]; then
+              ls -la "target/$target/release/"*.exe 2>/dev/null || echo "No .exe files found"
+            else
+              find "target/$target/release/" -maxdepth 1 -type f -executable -exec ls -la {} \;
+            fi
+          done
+
+      - name: Prepare artifacts
+        if: steps.matrix.outputs.build_this == 'true'
+        run: |
+          ARTIFACT_DIR="release-artifacts-${{ matrix.os }}-${{ matrix.arch }}"
+          mkdir -p "$ARTIFACT_DIR"
+          
+          for target in ${{ join(matrix.targets, ' ') }}; do
+            # 查找可执行文件
+            if [[ "${{ runner.os }}" == "Windows" ]]; then
+              EXECUTABLES=$(find "target/$target/release/" -name "*.exe" -type f)
+            else
+              EXECUTABLES=$(find "target/$target/release/" -type f -executable ! -name "*.d" ! -name "*.so" ! -name "*.dylib" ! -name "*.a" ! -name "*.rlib")
+            fi
+            
+            for exe in $EXECUTABLES; do
+              FILENAME=$(basename "$exe")
+              
+              # 重命名文件以包含平台和架构信息
+              if [[ "$FILENAME" == "$BINARY_NAME${{ matrix.file_extension }}" ]]; then
+                NEW_NAME="${BINARY_NAME}-${target//-/_}${{{ matrix.file_extension }}}"
+              else
+                BASENAME="${FILENAME%${{ matrix.file_extension }}}"
+                NEW_NAME="${BASENAME}-${target//-/_}${{{ matrix.file_extension }}}"
+              fi
+              
+              cp "$exe" "$ARTIFACT_DIR/$NEW_NAME"
+              echo "✅ Prepared: $NEW_NAME"
+              
+              # 计算文件大小
+              if command -v stat &> /dev/null; then
+                SIZE=$(stat -f%z "$exe" 2>/dev/null || stat -c%s "$exe")
+                SIZE_MB=$(echo "scale=2; $SIZE / 1024 / 1024" | bc)
+                echo "  Size: ${SIZE_MB} MB"
+              fi
+            done
+          done
+          
+          echo "artifact_dir=$ARTIFACT_DIR" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        if: steps.matrix.outputs.build_this == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}-binaries
+          path: ${{ env.artifact_dir }}/
+          retention-days: 7
+
+  create-release:
+    name: Create Multi-Platform Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    if: >
+      github.event.inputs.enable_release == 'true' &&
+      github.event.inputs.debug_mode != 'true' &&
+      (startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_tag != '')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        run: |
+          mkdir -p all-artifacts
+          echo "📥 Downloading artifacts for release..."
+
+      - name: Download artifacts matrix
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Prepare release files
+        run: |
+          echo "📦 Preparing multi-platform release files..."
+          RELEASE_DIR="final-release"
+          mkdir -p "$RELEASE_DIR"
+          
+          # 复制所有二进制文件到发布目录
+          find all-artifacts -type f -exec cp {} "$RELEASE_DIR/" \;
+          
+          # 重命名文件使其更友好
+          cd "$RELEASE_DIR"
+          for file in *; do
+            # 替换复杂的命名
+            new_name=$(echo "$file" | sed \
+              -e 's/windows-latest_x86_64/windows-x64/' \
+              -e 's/ubuntu-latest_x86_64/linux-x64/' \
+              -e 's/macos-latest_x86_64/macos-x64/' \
+              -e 's/ubuntu-latest_aarch64/linux-arm64/' \
+              -e 's/ubuntu-latest_armv7/linux-armv7/' \
+              -e 's/x86_64_pc_windows_msvc/msvc/' \
+              -e 's/x86_64_pc_windows_gnu/gnu/' \
+              -e 's/x86_64_unknown_linux_gnu/gnu/' \
+              -e 's/x86_64_unknown_linux_musl/musl/' \
+              -e 's/x86_64_apple_darwin//' \
+              -e 's/aarch64_unknown_linux_gnu/gnu/' \
+              -e 's/aarch64_unknown_linux_musl/musl/' \
+              -e 's/armv7_unknown_linux_gnueabihf/gnueabihf/' \
+              -e 's/__/_/g' \
+              -e 's/_\././')
+            
+            if [[ "$file" != "$new_name" ]]; then
+              mv "$file" "$new_name"
+              echo "📝 Renamed: $file -> $new_name"
+            fi
+          done
+          
+          # 显示文件列表
+          echo "📄 Release files:"
+          ls -la | while read -r line; do
+            echo "  $line"
+          done
+
+      - name: Create checksums
+        run: |
+          echo "🔐 Creating checksums..."
+          cd final-release
+          
+          # 为每个文件创建校验和
+          for file in *; do
+            if [[ -f "$file" ]]; then
+              echo "Creating checksums for: $file"
+              
+              # SHA256
+              sha256sum "$file" | awk '{print $1 " *" $2}' > "${file}.sha256"
+              
+              # SHA512
+              sha512sum "$file" | awk '{print $1 " *" $2}' > "${file}.sha512"
+              
+              echo "✅ Created checksums for: $file"
+            fi
+          done
+          
+          # 创建合并的校验和文件
+          sha256sum * | grep -v '\.sha' > SHA256SUMS
+          sha512sum * | grep -v '\.sha' > SHA512SUMS
+
+      - name: Generate release notes
+        run: |
+          echo "📝 Generating release notes..."
+          cat > release-notes.md << EOF
+          # ${{ github.event.repository.name }} v${GITHUB_REF#refs/tags/}
+          
+          ## 📦 Binaries
+          
+          This release includes binaries for multiple platforms:
+          
+          EOF
+          
+          cd final-release
+          
+          # 按平台分组显示文件
+          echo "### Windows" >> ../release-notes.md
+          ls *windows* 2>/dev/null | grep -v '\.sha' | while read file; do
+            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
+            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
+          done
+          
+          echo "" >> ../release-notes.md
+          echo "### Linux" >> ../release-notes.md
+          ls *linux* 2>/dev/null | grep -v '\.sha' | while read file; do
+            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
+            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
+          done
+          
+          echo "" >> ../release-notes.md
+          echo "### macOS" >> ../release-notes.md
+          ls *macos* 2>/dev/null | grep -v '\.sha' | while read file; do
+            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
+            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
+          done
+          
+          cat >> ../release-notes.md << EOF
+          
+          ## 🔐 Verification
+          
+          You can verify the integrity of the downloads using the provided checksums:
+          
+          \`\`\`bash
+          # Verify SHA256
+          sha256sum -c SHA256SUMS
+          
+          # Verify SHA512
+          sha512sum -c SHA512SUMS
+          \`\`\`
+          
+          ## 🚀 Installation
+          
+          Choose the appropriate binary for your platform and architecture.
+          
+          ## 📄 Changelog
+          
+          See the git history for detailed changes.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: final-release/*
+          body_path: release-notes.md
+          generate_release_notes: false
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
