@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use std::fs;
-use toml::{Value as TomlValue, Table};
+use toml::{Table, Value as TomlValue};
 
 use super::types::SetConfig;
 use super::utils::{parse_value_with_type, split_field_path};
@@ -15,8 +15,8 @@ pub fn set_field(config: &SetConfig) -> Result<String> {
         .with_context(|| format!("Failed to read file: {}", config.file_path))?;
 
     // Parse TOML
-    let mut toml_value: TomlValue = toml::from_str(&content)
-        .map_err(|e| TomlExtractError::InvalidToml {
+    let mut toml_value: TomlValue =
+        toml::from_str(&content).map_err(|e| TomlExtractError::InvalidToml {
             file: config.file_path.clone(),
             error: e.to_string(),
         })?;
@@ -25,7 +25,13 @@ pub fn set_field(config: &SetConfig) -> Result<String> {
     let parts = split_field_path(&config.field_path)?;
 
     // Set nested value
-    set_nested_value(&mut toml_value, &parts, config.value.as_str(), config.value_type.as_deref(), config.create_missing)?;
+    set_nested_value(
+        &mut toml_value,
+        &parts,
+        config.value.as_str(),
+        config.value_type.as_deref(),
+        config.create_missing,
+    )?;
 
     // Convert back to TOML string
     let updated_content = toml::to_string_pretty(&toml_value)?;
@@ -81,7 +87,8 @@ fn set_nested_value(
             let array_len = array.len(); // 先获取长度
 
             let parsed_value = parse_value_with_type(value, value_type)?;
-            array.get_mut(index)
+            array
+                .get_mut(index)
                 .ok_or_else(|| TomlExtractError::ArrayIndexOutOfBounds {
                     path: array_name.to_string(),
                     index,
@@ -91,13 +98,14 @@ fn set_nested_value(
         } else {
             // Recurse into nested structure
             let array_len = array.len(); // 先获取长度
-            let elem = array.get_mut(index).ok_or_else(|| {
-                TomlExtractError::ArrayIndexOutOfBounds {
-                    path: array_name.to_string(),
-                    index,
-                    length: array_len,
-                }
-            })?;
+            let elem =
+                array
+                    .get_mut(index)
+                    .ok_or_else(|| TomlExtractError::ArrayIndexOutOfBounds {
+                        path: array_name.to_string(),
+                        index,
+                        length: array_len,
+                    })?;
             set_nested_value(elem, rest, value, value_type, create_missing)?;
         }
     } else {
@@ -110,7 +118,9 @@ fn set_nested_value(
             } else if create_missing {
                 // Create parent table if missing and allowed
                 *current = TomlValue::Table(Table::new());
-                current.as_table_mut().unwrap()
+                current
+                    .as_table_mut()
+                    .unwrap()
                     .insert(first.clone(), parsed_value);
             } else {
                 return Err(TomlExtractError::NotATable(format!(
@@ -121,16 +131,20 @@ fn set_nested_value(
         } else {
             // Recurse into child fields
             let next = if let Some(table) = current.as_table_mut() {
-                table.entry(first.clone()).or_insert_with(|| TomlValue::Table(Table::new()))
+                table
+                    .entry(first.clone())
+                    .or_insert_with(|| TomlValue::Table(Table::new()))
             } else if create_missing {
                 *current = TomlValue::Table(Table::new());
-                current.as_table_mut().unwrap()
+                current
+                    .as_table_mut()
+                    .unwrap()
                     .entry(first.clone())
                     .or_insert_with(|| TomlValue::Table(Table::new()))
             } else {
                 return Err(TomlExtractError::NotATable(first.clone()));
             };
-            
+
             set_nested_value(next, rest, value, value_type, create_missing)?;
         }
     }
@@ -151,7 +165,7 @@ mod tests {
     use super::*;
     use tempfile::NamedTempFile;
     // use toml::Value as TomlValue;
-    use std::io::Write; 
+    use std::io::Write;
 
     #[test]
     fn test_set_field_basic() {
@@ -189,7 +203,6 @@ mod tests {
         // eprintln!("Updated content: {}", updated);
         // assert!(updated.contains("[\"Charlie\", \"Bob\"]"));
         assert!(updated.contains("\"Charlie\",\n    \"Bob\""));
-
     }
 
     #[test]

@@ -26,9 +26,11 @@ pub fn get_nested_value<'a>(
             })?;
 
             // Get array from current value
-            current = current.get(array_name)
+            current = current
+                .get(array_name)
                 .ok_or_else(|| TomlExtractError::FieldNotFound(array_name.to_string()))?;
-            let array = current.as_array()
+            let array = current
+                .as_array()
                 .ok_or_else(|| TomlExtractError::NotAnArray(array_name.to_string()))?;
 
             // Check index bounds
@@ -43,7 +45,8 @@ pub fn get_nested_value<'a>(
             current = &array[index];
         } else {
             // Regular field access
-            current = current.get(part)
+            current = current
+                .get(part)
                 .ok_or_else(|| TomlExtractError::FieldNotFound(part.to_string()))?;
         }
     }
@@ -72,9 +75,8 @@ pub fn to_json_value(toml_value: &TomlValue) -> Result<JsonValue> {
         TomlValue::String(s) => Ok(JsonValue::String(s.clone())),
         TomlValue::Integer(i) => Ok(JsonValue::Number((*i).into())),
         TomlValue::Float(f) => Ok(JsonValue::Number(
-            serde_json::Number::from_f64(*f).ok_or_else(|| {
-                anyhow::anyhow!("Cannot convert float {} to JSON number", f)
-            })?,
+            serde_json::Number::from_f64(*f)
+                .ok_or_else(|| anyhow::anyhow!("Cannot convert float {} to JSON number", f))?,
         )),
         TomlValue::Boolean(b) => Ok(JsonValue::Bool(*b)),
         TomlValue::Array(arr) => {
@@ -128,13 +130,22 @@ mod tests {
         let value: TomlValue = toml::from_str(toml_str).unwrap();
 
         // 测试普通字段
-        assert_eq!(get_nested_value(&value, "package.name").unwrap(), &TomlValue::String("test".into()));
-        
+        assert_eq!(
+            get_nested_value(&value, "package.name").unwrap(),
+            &TomlValue::String("test".into())
+        );
+
         // 测试嵌套字段
-        assert_eq!(get_nested_value(&value, "dependencies.serde.version").unwrap(), &TomlValue::String("1.0".into()));
-        
+        assert_eq!(
+            get_nested_value(&value, "dependencies.serde.version").unwrap(),
+            &TomlValue::String("1.0".into())
+        );
+
         // 测试数组
-        assert_eq!(get_nested_value(&value, "array.items[1]").unwrap(), &TomlValue::Integer(2));
+        assert_eq!(
+            get_nested_value(&value, "array.items[1]").unwrap(),
+            &TomlValue::Integer(2)
+        );
     }
 
     #[test]
@@ -147,9 +158,15 @@ mod tests {
     #[test]
     fn test_to_json_value() {
         let toml_value = TomlValue::Integer(42);
-        assert_eq!(to_json_value(&toml_value).unwrap(), serde_json::Value::Number(42.into()));
+        assert_eq!(
+            to_json_value(&toml_value).unwrap(),
+            serde_json::Value::Number(42.into())
+        );
 
         let toml_value = TomlValue::String("test".into());
-        assert_eq!(to_json_value(&toml_value).unwrap(), serde_json::Value::String("test".into()));
+        assert_eq!(
+            to_json_value(&toml_value).unwrap(),
+            serde_json::Value::String("test".into())
+        );
     }
 }

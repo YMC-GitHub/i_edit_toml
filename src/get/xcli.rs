@@ -169,9 +169,10 @@ pub fn handle_get_command(matches: &clap::ArgMatches) -> Result<()> {
 
     // Handle convenience flags for arrays
     if matches.contains_id("authors") {
-        let index = matches.get_one::<String>("authors")
+        let index = matches
+            .get_one::<String>("authors")
             .and_then(|s| s.parse::<usize>().ok());
-        
+
         match get_package_authors(Some(file_path), index, strip_quotes) {
             Ok(authors) => println!("{}", authors),
             Err(e) if !quiet => eprintln!("Error: {}", e),
@@ -181,9 +182,10 @@ pub fn handle_get_command(matches: &clap::ArgMatches) -> Result<()> {
     }
 
     if matches.contains_id("keywords") {
-        let index = matches.get_one::<String>("keywords")
+        let index = matches
+            .get_one::<String>("keywords")
             .and_then(|s| s.parse::<usize>().ok());
-        
+
         match get_package_keywords(Some(file_path), index, strip_quotes) {
             Ok(keywords) => println!("{}", keywords),
             Err(e) if !quiet => eprintln!("Error: {}", e),
@@ -193,9 +195,10 @@ pub fn handle_get_command(matches: &clap::ArgMatches) -> Result<()> {
     }
 
     if matches.contains_id("categories") {
-        let index = matches.get_one::<String>("categories")
+        let index = matches
+            .get_one::<String>("categories")
             .and_then(|s| s.parse::<usize>().ok());
-        
+
         match get_package_categories(Some(file_path), index, strip_quotes) {
             Ok(categories) => println!("{}", categories),
             Err(e) if !quiet => eprintln!("Error: {}", e),

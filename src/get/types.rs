@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub struct ExtractConfig {
     /// Path to the TOML file
     pub file_path: String,
-    /// Dot-separated path to the field (e.g., "package.name", "dependencies.serde", "authors[0]")
+    /// Dot-separated path to the field (e.g., "package.name", "dependencies.serde", "authors\[0\]")
     pub field_path: String,
     /// Output format (None for raw value, Some("json") for JSON)
     pub output_format: Option<String>,

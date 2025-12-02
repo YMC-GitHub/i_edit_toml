@@ -50,11 +50,11 @@ pub fn extract_multiple_fields(
     field_paths: &[String],
     strip_quotes: bool,
 ) -> Result<ExtractionResult> {
-    let content = fs::read_to_string(file_path)
-        .context(format!("Failed to read file: {}", file_path))?;
+    let content =
+        fs::read_to_string(file_path).context(format!("Failed to read file: {}", file_path))?;
 
-    let value: TomlValue = toml::from_str(&content)
-        .context(format!("Invalid TOML syntax in: {}", file_path))?;
+    let value: TomlValue =
+        toml::from_str(&content).context(format!("Invalid TOML syntax in: {}", file_path))?;
 
     let mut result = ExtractionResult::new(file_path.to_string());
 
@@ -82,7 +82,11 @@ pub fn extract_multiple_fields(
 ///
 /// # Returns
 /// The array as a formatted string
-pub fn extract_array(file_path: &str, array_path: &str, output_format: Option<&str>) -> Result<String> {
+pub fn extract_array(
+    file_path: &str,
+    array_path: &str,
+    output_format: Option<&str>,
+) -> Result<String> {
     let config = ExtractConfig {
         file_path: file_path.to_string(),
         field_path: array_path.to_string(),
@@ -101,16 +105,17 @@ pub fn extract_array(file_path: &str, array_path: &str, output_format: Option<&s
 /// # Returns
 /// The length of the array as a `usize`
 pub fn extract_array_length(file_path: &str, array_path: &str) -> Result<usize> {
-    let content = fs::read_to_string(file_path)
-        .context(format!("Failed to read file: {}", file_path))?;
+    let content =
+        fs::read_to_string(file_path).context(format!("Failed to read file: {}", file_path))?;
 
-    let value: TomlValue = toml::from_str(&content)
-        .context(format!("Invalid TOML syntax in: {}", file_path))?;
+    let value: TomlValue =
+        toml::from_str(&content).context(format!("Invalid TOML syntax in: {}", file_path))?;
 
-    let array_value = get_nested_value(&value, array_path)
-        .context(format!("Array not found: {}", array_path))?;
+    let array_value =
+        get_nested_value(&value, array_path).context(format!("Array not found: {}", array_path))?;
 
-    let array = array_value.as_array()
+    let array = array_value
+        .as_array()
         .ok_or_else(|| TomlExtractError::NotAnArray(array_path.to_string()))?;
 
     Ok(array.len())
@@ -132,16 +137,17 @@ pub fn extract_array_element(
     index: usize,
     strip_quotes: bool,
 ) -> Result<String> {
-    let content = fs::read_to_string(file_path)
-        .context(format!("Failed to read file: {}", file_path))?;
+    let content =
+        fs::read_to_string(file_path).context(format!("Failed to read file: {}", file_path))?;
 
-    let value: TomlValue = toml::from_str(&content)
-        .context(format!("Invalid TOML syntax in: {}", file_path))?;
+    let value: TomlValue =
+        toml::from_str(&content).context(format!("Invalid TOML syntax in: {}", file_path))?;
 
-    let array_value = get_nested_value(&value, array_path)
-        .context(format!("Array not found: {}", array_path))?;
+    let array_value =
+        get_nested_value(&value, array_path).context(format!("Array not found: {}", array_path))?;
 
-    let array = array_value.as_array()
+    let array = array_value
+        .as_array()
         .ok_or_else(|| TomlExtractError::NotAnArray(array_path.to_string()))?;
 
     if index >= array.len() {
@@ -149,7 +155,8 @@ pub fn extract_array_element(
             path: array_path.to_string(),
             index,
             length: array.len(),
-        }.into());
+        }
+        .into());
     }
 
     let element = &array[index];
@@ -211,8 +218,7 @@ pub fn get_dependencies(file_path: Option<&str>) -> Result<HashMap<String, Strin
     let path = file_path.unwrap_or("Cargo.toml");
     let content = fs::read_to_string(path).context("Failed to read Cargo.toml")?;
 
-    let value: TomlValue = toml::from_str(&content)
-        .context("Invalid TOML syntax in Cargo.toml")?;
+    let value: TomlValue = toml::from_str(&content).context("Invalid TOML syntax in Cargo.toml")?;
 
     let mut dependencies = HashMap::new();
 
@@ -310,9 +316,9 @@ pub fn get_package_categories(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::collections::HashMap;
-    use std::io::Write; 
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_extract_field_basic() {
@@ -353,9 +359,12 @@ mod tests {
 
         let fields = vec!["package.name".to_string(), "package.version".to_string()];
         let result = extract_multiple_fields(path, &fields, false).unwrap();
-        
+
         assert_eq!(result.get("package.name"), Some(&"\"test\"".to_string()));
-        assert_eq!(result.get("package.version"), Some(&"\"1.0.0\"".to_string()));
+        assert_eq!(
+            result.get("package.version"),
+            Some(&"\"1.0.0\"".to_string())
+        );
     }
 
     #[test]
@@ -370,13 +379,17 @@ mod tests {
     #[test]
     fn test_get_dependencies() {
         let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "[dependencies]\nserde = \"1.0\"\ntoml = {{ version = \"0.8\" }}").unwrap();
+        writeln!(
+            temp_file,
+            "[dependencies]\nserde = \"1.0\"\ntoml = {{ version = \"0.8\" }}"
+        )
+        .unwrap();
         let path = temp_file.path().to_str().unwrap();
 
         let deps = get_dependencies(Some(path)).unwrap();
         let expected = HashMap::from([
             ("serde".to_string(), "1.0".to_string()),
-            ("toml".to_string(), "0.8".to_string())
+            ("toml".to_string(), "0.8".to_string()),
         ]);
         assert_eq!(deps, expected);
     }
