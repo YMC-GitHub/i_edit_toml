@@ -2,8 +2,8 @@ name: Multi-Platform Build and Release
 
 on:
   push:
-    # tags:
-    #   - 'v*'  # 推送 v 开头的标签时触发
+    tags:
+      - 'v*'  # 推送 v 开头的标签时触发
   workflow_dispatch:  # 允许手动触发
     inputs:
       debug_mode:
@@ -40,31 +40,31 @@ jobs:
           # Windows 目标
           - os: windows-latest
             arch: x86_64
-            targets: [x86_64-pc-windows-msvc, x86_64-pc-windows-gnu]
-            file_extension: .exe
+            targets: 'x86_64-pc-windows-msvc,x86_64-pc-windows-gnu'
+            file_extension: '.exe'
           
           # Linux 目标
           - os: ubuntu-latest
             arch: x86_64
-            targets: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl]
-            file_extension: ""
+            targets: 'x86_64-unknown-linux-gnu,x86_64-unknown-linux-musl'
+            file_extension: ''
           
           # macOS 目标
           - os: macos-latest
             arch: x86_64
-            targets: [x86_64-apple-darwin]
-            file_extension: ""
+            targets: 'x86_64-apple-darwin'
+            file_extension: ''
           
           # ARM 目标（交叉编译）
           - os: ubuntu-latest
             arch: aarch64
-            targets: [aarch64-unknown-linux-gnu, aarch64-unknown-linux-musl]
-            file_extension: ""
+            targets: 'aarch64-unknown-linux-gnu,aarch64-unknown-linux-musl'
+            file_extension: ''
           
           - os: ubuntu-latest
             arch: armv7
-            targets: [armv7-unknown-linux-gnueabihf]
-            file_extension: ""
+            targets: 'armv7-unknown-linux-gnueabihf'
+            file_extension: ''
     
     steps:
       - name: Checkout repository
@@ -81,16 +81,30 @@ jobs:
           echo "Requested architectures: $ARCHITECTURES"
           
           # 检查当前组合是否在请求中
-          if [[ " $PLATFORMS " == *" ${{ matrix.os }} "* ]] || [[ "$PLATFORMS" == "all" ]]; then
-            if [[ " $ARCHITECTURES " == *" ${{ matrix.arch }} "* ]] || [[ "$ARCHITECTURES" == "all" ]]; then
-              echo "✅ Building for ${{ matrix.os }}-${{ matrix.arch }}"
+          CURRENT_OS="${{ matrix.os }}"
+          CURRENT_ARCH="${{ matrix.arch }}"
+          
+          # 提取基础平台名称
+          if [[ "$CURRENT_OS" == "windows-latest" ]]; then
+            OS_NAME="windows"
+          elif [[ "$CURRENT_OS" == "ubuntu-latest" ]]; then
+            OS_NAME="linux"
+          elif [[ "$CURRENT_OS" == "macos-latest" ]]; then
+            OS_NAME="macos"
+          else
+            OS_NAME="$CURRENT_OS"
+          fi
+          
+          if [[ " $PLATFORMS " == *" $OS_NAME "* ]] || [[ "$PLATFORMS" == "all" ]]; then
+            if [[ " $ARCHITECTURES " == *" $CURRENT_ARCH "* ]] || [[ "$ARCHITECTURES" == "all" ]]; then
+              echo "✅ Building for $CURRENT_OS-$CURRENT_ARCH"
               echo "build_this=true" >> $GITHUB_OUTPUT
             else
-              echo "❌ Skipping ${{ matrix.arch }} (not in requested architectures)"
+              echo "❌ Skipping $CURRENT_ARCH (not in requested architectures)"
               echo "build_this=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "❌ Skipping ${{ matrix.os }} (not in requested platforms)"
+            echo "❌ Skipping $OS_NAME (not in requested platforms)"
             echo "build_this=false" >> $GITHUB_OUTPUT
           fi
 
@@ -98,9 +112,8 @@ jobs:
         if: steps.matrix.outputs.build_this == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ join(matrix.targets, ',') }}
-          # 为交叉编译安装必要的组件
-          ${{ matrix.arch != 'x86_64' && 'components: rust-std-' || '' }}
+          targets: ${{ matrix.targets }}
+          ${{ matrix.arch != 'x86_64' && format('components: rust-std-{0}', matrix.targets.split(',')[0]) || '' }}
 
       - name: Install cross-compilation tools (Linux -> other arches)
         if: steps.matrix.outputs.build_this == 'true' && runner.os == 'Linux' && matrix.arch != 'x86_64'
@@ -133,9 +146,12 @@ jobs:
         if: steps.matrix.outputs.build_this == 'true'
         run: |
           echo "🏗️ Building for ${{ matrix.os }} (${{ matrix.arch }})"
-          echo "Targets: ${{ join(matrix.targets, ', ') }}"
+          echo "Targets: ${{ matrix.targets }}"
           
-          for target in ${{ join(matrix.targets, ' ') }}; do
+          # 将逗号分隔的 targets 转换为数组
+          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
+          
+          for target in "$${TARGET_ARRAY[@]}"; do
             echo "Building for target: $target"
             
             # 设置交叉编译环境变量
@@ -152,9 +168,13 @@ jobs:
             
             echo "📁 Build output for $target:"
             if [[ "${{ runner.os }}" == "Windows" ]]; then
-              ls -la "target/$target/release/"*.exe 2>/dev/null || echo "No .exe files found"
+              find "target/$target/release/" -name "*.exe" -type f | while read file; do
+                ls -la "$file"
+              done
             else
-              find "target/$target/release/" -maxdepth 1 -type f -executable -exec ls -la {} \;
+              find "target/$target/release/" -maxdepth 1 -type f -executable | while read file; do
+                ls -la "$file"
+              done
             fi
           done
 
@@ -164,23 +184,27 @@ jobs:
           ARTIFACT_DIR="release-artifacts-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "$ARTIFACT_DIR"
           
-          for target in ${{ join(matrix.targets, ' ') }}; do
+          # 将逗号分隔的 targets 转换为数组
+          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
+          
+          for target in "$${TARGET_ARRAY[@]}"; do
             # 查找可执行文件
             if [[ "${{ runner.os }}" == "Windows" ]]; then
               EXECUTABLES=$(find "target/$target/release/" -name "*.exe" -type f)
             else
-              EXECUTABLES=$(find "target/$target/release/" -type f -executable ! -name "*.d" ! -name "*.so" ! -name "*.dylib" ! -name "*.a" ! -name "*.rlib")
+              # 在非 Windows 系统上，查找可执行文件但排除库文件
+              EXECUTABLES=$(find "target/$target/release/" -type f -perm -111 ! -name "*.so" ! -name "*.dylib" ! -name "*.a" ! -name "*.rlib")
             fi
             
             for exe in $EXECUTABLES; do
               FILENAME=$(basename "$exe")
               
               # 重命名文件以包含平台和架构信息
-              if [[ "$FILENAME" == "$BINARY_NAME${{ matrix.file_extension }}" ]]; then
-                NEW_NAME="${BINARY_NAME}-${target//-/_}${{{ matrix.file_extension }}}"
+              if [[ "$FILENAME" == "${{ env.BINARY_NAME }}${{ matrix.file_extension }}" ]]; then
+                NEW_NAME="${{ env.BINARY_NAME }}-${target//-/_}${{ matrix.file_extension }}"
               else
                 BASENAME="${FILENAME%${{ matrix.file_extension }}}"
-                NEW_NAME="${BASENAME}-${target//-/_}${{{ matrix.file_extension }}}"
+                NEW_NAME="${BASENAME}-${target//-/_}${{ matrix.file_extension }}"
               fi
               
               cp "$exe" "$ARTIFACT_DIR/$NEW_NAME"
@@ -190,7 +214,7 @@ jobs:
               if command -v stat &> /dev/null; then
                 SIZE=$(stat -f%z "$exe" 2>/dev/null || stat -c%s "$exe")
                 SIZE_MB=$(echo "scale=2; $SIZE / 1024 / 1024" | bc)
-                echo "  Size: ${SIZE_MB} MB"
+                echo "  Size: $${SIZE_MB} MB"
               fi
             done
           done
@@ -212,9 +236,11 @@ jobs:
     permissions:
       contents: write
     if: >
-      github.event.inputs.enable_release == 'true' &&
-      github.event.inputs.debug_mode != 'true' &&
-      (startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_tag != '')
+      (github.event.inputs.enable_release == 'true' ||
+      github.event.inputs.enable_release == null) &&
+      (github.event.inputs.debug_mode == 'false' ||
+      github.event.inputs.debug_mode == null) &&
+      (startsWith(github.ref, 'refs/tags/'))
     
     steps:
       - name: Checkout repository
@@ -299,8 +325,10 @@ jobs:
       - name: Generate release notes
         run: |
           echo "📝 Generating release notes..."
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          
           cat > release-notes.md << EOF
-          # ${{ github.event.repository.name }} v${GITHUB_REF#refs/tags/}
+          # ${{ github.event.repository.name }} v$TAG_NAME
           
           ## 📦 Binaries
           
@@ -344,7 +372,7 @@ jobs:
           # Verify SHA256
           sha256sum -c SHA256SUMS
           
-          # Verify SHA512
+          # Verify SHA512  
           sha512sum -c SHA512SUMS
           \`\`\`
           
