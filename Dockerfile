@@ -150,7 +150,7 @@ RUN apk update && apk add --no-cache \
 WORKDIR /app
 
 # 只复制必要的配置
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml ./
 # COPY binary-name.txt binary-name.txt 2>/dev/null || true
 
 # 确定二进制名称：优先使用 binary-name.txt，否则使用 BINARY_NAME 参数
