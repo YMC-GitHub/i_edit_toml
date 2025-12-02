@@ -96,7 +96,7 @@ toml_path set -k package.authors[0] -v "New Author <author@example.com>" --in-pl
 toml_path set -k package.description -v "A new description" --create-missing --in-place
 
 # Specify value type
-toml_path set -k packageedition -v "2021" -t string --in-place
+toml_path set -k package.edition -v "2021" -t string --in-place
 ```
 
 ### As a Library
