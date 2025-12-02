@@ -2,7 +2,7 @@
 name = "toml_path"
 version = "0.2.0"
 edition = "2021"
-description = "A lightweight, high-performance TOML field extraction and manipulation tool"
+description = "A lightweight, high-performance tool for Editing TOML based on field paths"
 authors = ["YeMiancheng <ymc.github@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/YeMiancheng/toml_path"
