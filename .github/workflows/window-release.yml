@@ -121,7 +121,8 @@ jobs:
           }
 
       - name: Prepare artifacts
-        if: ${{ !inputs.enable_release }}
+        # if: ${{ !inputs.enable_release }}
+        if: ${{ inputs.enable_release == 'true' }}
         id: prepare-artifacts
         run: |
           $binaryPath = "target\${{ matrix.target }}\release\$env:BINARY_NAME.exe"
@@ -163,6 +164,7 @@ jobs:
           echo "target_name=$targetName" >> $env:GITHUB_OUTPUT
 
       - name: Upload artifacts
+        if: ${{ inputs.enable_release == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: windows-binaries-${{ matrix.target }}
