@@ -73,40 +73,18 @@ jobs:
       - name: Setup build matrix
         id: matrix
         run: |
-          # 解析用户输入的平台和架构
-          PLATFORMS="${{ inputs.platforms }}"
-          ARCHITECTURES="${{ inputs.architectures }}"
+          # 使用统一的脚本
+          output=$(bash scripts/build-release.sh build \
+            --platforms="${{ github.event.inputs.platforms || 'windows,linux,macos' }}" \
+            --architectures="${{ github.event.inputs.architectures || 'x86_64' }}" \
+            --os-name="${{ matrix.os }}" \
+            --arch="${{ matrix.arch }}" \
+            --targets="${{ matrix.targets }}" \
+            --binary-name="${{ env.BINARY_NAME }}" \
+            --file-extension="${{ matrix.file_extension }}")
           
-          echo "Requested platforms: $PLATFORMS"
-          echo "Requested architectures: $ARCHITECTURES"
-          
-          # 检查当前组合是否在请求中
-          CURRENT_OS="${{ matrix.os }}"
-          CURRENT_ARCH="${{ matrix.arch }}"
-          
-          # 提取基础平台名称
-          if [[ "$CURRENT_OS" == "windows-latest" ]]; then
-            OS_NAME="windows"
-          elif [[ "$CURRENT_OS" == "ubuntu-latest" ]]; then
-            OS_NAME="linux"
-          elif [[ "$CURRENT_OS" == "macos-latest" ]]; then
-            OS_NAME="macos"
-          else
-            OS_NAME="$CURRENT_OS"
-          fi
-          
-          if [[ " $PLATFORMS " == *" $OS_NAME "* ]] || [[ "$PLATFORMS" == "all" ]]; then
-            if [[ " $ARCHITECTURES " == *" $CURRENT_ARCH "* ]] || [[ "$ARCHITECTURES" == "all" ]]; then
-              echo "✅ Building for $CURRENT_OS-$CURRENT_ARCH"
-              echo "build_this=true" >> $GITHUB_OUTPUT
-            else
-              echo "❌ Skipping $CURRENT_ARCH (not in requested architectures)"
-              echo "build_this=false" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "❌ Skipping $OS_NAME (not in requested platforms)"
-            echo "build_this=false" >> $GITHUB_OUTPUT
-          fi
+          echo "$output"
+          echo "$output" | grep -E "^build_this=" | cut -d= -f2 >> $GITHUB_OUTPUT
 
       - name: Install Rust toolchain
         if: steps.matrix.outputs.build_this == 'true'
@@ -118,17 +96,9 @@ jobs:
       - name: Install cross-compilation tools (Linux -> other arches)
         if: steps.matrix.outputs.build_this == 'true' && runner.os == 'Linux' && matrix.arch != 'x86_64'
         run: |
-          echo "Installing cross-compilation tools for ${{ matrix.arch }}..."
-          sudo apt-get update
-          
-          case "${{ matrix.arch }}" in
-            aarch64)
-              sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-              ;;
-            armv7)
-              sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-              ;;
-          esac
+          # 直接从脚本调用函数（这里需要 source）
+          source scripts/build-release.sh
+          install_cross_compile_tools "${{ matrix.arch }}"
 
       - name: Cache cargo registry
         if: steps.matrix.outputs.build_this == 'true'
@@ -145,81 +115,31 @@ jobs:
       - name: Build for all targets
         if: steps.matrix.outputs.build_this == 'true'
         run: |
-          echo "🏗️ Building for ${{ matrix.os }} (${{ matrix.arch }})"
-          echo "Targets: ${{ matrix.targets }}"
-          
-          # 将逗号分隔的 targets 转换为数组
-          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
-          
-          for target in "$${TARGET_ARRAY[@]}"; do
-            echo "Building for target: $target"
-            
-            # 设置交叉编译环境变量
-            case "$target" in
-              aarch64-unknown-linux-gnu)
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-                ;;
-              armv7-unknown-linux-gnueabihf)
-                export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-                ;;
-            esac
-            
-            cargo build --release --target $target
-            
-            echo "📁 Build output for $target:"
-            if [[ "${{ runner.os }}" == "Windows" ]]; then
-              find "target/$target/release/" -name "*.exe" -type f | while read file; do
-                ls -la "$file"
-              done
-            else
-              find "target/$target/release/" -maxdepth 1 -type f -executable | while read file; do
-                ls -la "$file"
-              done
-            fi
-          done
+          # 直接从脚本调用函数
+          source scripts/build-release.sh
+          build_targets \
+            "${{ matrix.targets }}" \
+            "${{ runner.os }}" \
+            "${{ matrix.arch }}" \
+            "${{ env.BINARY_NAME }}" \
+            "${{ matrix.file_extension }}"
 
       - name: Prepare artifacts
         if: steps.matrix.outputs.build_this == 'true'
+        id: prepare_artifacts
         run: |
-          ARTIFACT_DIR="release-artifacts-${{ matrix.os }}-${{ matrix.arch }}"
-          mkdir -p "$ARTIFACT_DIR"
+          # 直接从脚本调用函数
+          source scripts/build-release.sh
+          output=$(prepare_artifacts \
+            "${{ matrix.targets }}" \
+            "${{ runner.os }}" \
+            "${{ env.BINARY_NAME }}" \
+            "${{ matrix.file_extension }}" \
+            "${{ matrix.arch }}" \
+            "${{ matrix.os }}")
           
-          # 将逗号分隔的 targets 转换为数组
-          IFS=',' read -ra TARGET_ARRAY <<< "${{ matrix.targets }}"
-          
-          for target in "$${TARGET_ARRAY[@]}"; do
-            # 查找可执行文件
-            if [[ "${{ runner.os }}" == "Windows" ]]; then
-              EXECUTABLES=$(find "target/$target/release/" -name "*.exe" -type f)
-            else
-              # 在非 Windows 系统上，查找可执行文件但排除库文件
-              EXECUTABLES=$(find "target/$target/release/" -type f -perm -111 ! -name "*.so" ! -name "*.dylib" ! -name "*.a" ! -name "*.rlib")
-            fi
-            
-            for exe in $EXECUTABLES; do
-              FILENAME=$(basename "$exe")
-              
-              # 重命名文件以包含平台和架构信息
-              if [[ "$FILENAME" == "${{ env.BINARY_NAME }}${{ matrix.file_extension }}" ]]; then
-                NEW_NAME="${{ env.BINARY_NAME }}-${target//-/_}${{ matrix.file_extension }}"
-              else
-                BASENAME="${FILENAME%${{ matrix.file_extension }}}"
-                NEW_NAME="${BASENAME}-${target//-/_}${{ matrix.file_extension }}"
-              fi
-              
-              cp "$exe" "$ARTIFACT_DIR/$NEW_NAME"
-              echo "✅ Prepared: $NEW_NAME"
-              
-              # 计算文件大小
-              if command -v stat &> /dev/null; then
-                SIZE=$(stat -f%z "$exe" 2>/dev/null || stat -c%s "$exe")
-                SIZE_MB=$(echo "scale=2; $SIZE / 1024 / 1024" | bc)
-                echo "  Size: $${SIZE_MB} MB"
-              fi
-            done
-          done
-          
-          echo "artifact_dir=$ARTIFACT_DIR" >> $GITHUB_ENV
+          echo "$output"
+          echo "$output" | grep -E "^artifact_dir=" | cut -d= -f2 >> $GITHUB_ENV
 
       - name: Upload artifacts
         if: steps.matrix.outputs.build_this == 'true'
@@ -256,140 +176,28 @@ jobs:
         with:
           path: all-artifacts
 
-      - name: Prepare release files
+      - name: Execute release process
+        id: release_process
         run: |
-          echo "📦 Preparing multi-platform release files..."
-          RELEASE_DIR="final-release"
-          mkdir -p "$RELEASE_DIR"
-          
-          # 复制所有二进制文件到发布目录
-          find all-artifacts -type f -exec cp {} "$RELEASE_DIR/" \;
-          
-          # 重命名文件使其更友好
-          cd "$RELEASE_DIR"
-          for file in *; do
-            # 替换复杂的命名
-            new_name=$(echo "$file" | sed \
-              -e 's/windows-latest_x86_64/windows-x64/' \
-              -e 's/ubuntu-latest_x86_64/linux-x64/' \
-              -e 's/macos-latest_x86_64/macos-x64/' \
-              -e 's/ubuntu-latest_aarch64/linux-arm64/' \
-              -e 's/ubuntu-latest_armv7/linux-armv7/' \
-              -e 's/x86_64_pc_windows_msvc/msvc/' \
-              -e 's/x86_64_pc_windows_gnu/gnu/' \
-              -e 's/x86_64_unknown_linux_gnu/gnu/' \
-              -e 's/x86_64_unknown_linux_musl/musl/' \
-              -e 's/x86_64_apple_darwin//' \
-              -e 's/aarch64_unknown_linux_gnu/gnu/' \
-              -e 's/aarch64_unknown_linux_musl/musl/' \
-              -e 's/armv7_unknown_linux_gnueabihf/gnueabihf/' \
-              -e 's/__/_/g' \
-              -e 's/_\././')
-            
-            if [[ "$file" != "$new_name" ]]; then
-              mv "$file" "$new_name"
-              echo "📝 Renamed: $file -> $new_name"
-            fi
-          done
-          
-          # 显示文件列表
-          echo "📄 Release files:"
-          ls -la | while read -r line; do
-            echo "  $line"
-          done
-
-      - name: Create checksums
-        run: |
-          echo "🔐 Creating checksums..."
-          cd final-release
-          
-          # 为每个文件创建校验和
-          for file in *; do
-            if [[ -f "$file" ]]; then
-              echo "Creating checksums for: $file"
-              
-              # SHA256
-              sha256sum "$file" | awk '{print $1 " *" $2}' > "${file}.sha256"
-              
-              # SHA512
-              sha512sum "$file" | awk '{print $1 " *" $2}' > "${file}.sha512"
-              
-              echo "✅ Created checksums for: $file"
-            fi
-          done
-          
-          # 创建合并的校验和文件
-          sha256sum * | grep -v '\.sha' > SHA256SUMS
-          sha512sum * | grep -v '\.sha' > SHA512SUMS
-
-      - name: Generate release notes
-        run: |
-          echo "📝 Generating release notes..."
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           
-          cat > release-notes.md << EOF
-          # ${{ github.event.repository.name }} v$TAG_NAME
+          # 使用统一的脚本
+          output=$(bash scripts/build-release.sh release \
+            --repo-name="${{ github.event.repository.name }}" \
+            --tag-name="$TAG_NAME" \
+            --artifacts-path="all-artifacts")
           
-          ## 📦 Binaries
+          echo "$output"
           
-          This release includes binaries for multiple platforms:
-          
-          EOF
-          
-          cd final-release
-          
-          # 按平台分组显示文件
-          echo "### Windows" >> ../release-notes.md
-          ls *windows* 2>/dev/null | grep -v '\.sha' | while read file; do
-            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
-            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
-            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
-          done
-          
-          echo "" >> ../release-notes.md
-          echo "### Linux" >> ../release-notes.md
-          ls *linux* 2>/dev/null | grep -v '\.sha' | while read file; do
-            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
-            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
-            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
-          done
-          
-          echo "" >> ../release-notes.md
-          echo "### macOS" >> ../release-notes.md
-          ls *macos* 2>/dev/null | grep -v '\.sha' | while read file; do
-            size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
-            size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
-            echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
-          done
-          
-          cat >> ../release-notes.md << EOF
-          
-          ## 🔐 Verification
-          
-          You can verify the integrity of the downloads using the provided checksums:
-          
-          \`\`\`bash
-          # Verify SHA256
-          sha256sum -c SHA256SUMS
-          
-          # Verify SHA512  
-          sha512sum -c SHA512SUMS
-          \`\`\`
-          
-          ## 🚀 Installation
-          
-          Choose the appropriate binary for your platform and architecture.
-          
-          ## 📄 Changelog
-          
-          See the git history for detailed changes.
-          EOF
+          # 提取输出变量
+          echo "$output" | grep -E "^release_dir=" | cut -d= -f2 >> $GITHUB_ENV
+          echo "$output" | grep -E "^release_notes=" | cut -d= -f2 >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: final-release/*
-          body_path: release-notes.md
+          files: ${{ env.release_dir }}/*
+          body_path: ${{ steps.release_process.outputs.release_notes }}
           generate_release_notes: false
           draft: false
           prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
