@@ -31,7 +31,6 @@ on:
 
 env:
   BINARY_NAME: ${{ github.event.repository.name }}
-  REPOSITORY_LOWER: ${{ lower(github.repository) }}
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
   DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
@@ -49,10 +48,22 @@ jobs:
       push_dockerhub: ${{ steps.parse-registries.outputs.push_dockerhub }}
       any_registry: ${{ steps.parse-registries.outputs.any_registry }}
       has_dockerhub_creds: ${{ steps.check-dockerhub-creds.outputs.has_dockerhub_creds }}
+      repository_lower: ${{ steps.get-repo-lower.outputs.repository_lower }}
+      binary_name_lower: ${{ steps.get-repo-lower.outputs.binary_name_lower }}
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Get repository name in lowercase
+        id: get-repo-lower
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          BINARY_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          echo "repository_lower=$REPO_LOWER" >> $GITHUB_OUTPUT
+          echo "binary_name_lower=$BINARY_LOWER" >> $GITHUB_OUTPUT
+          echo "📁 Repository (lowercase): $REPO_LOWER"
+          echo "📄 Binary name (lowercase): $BINARY_LOWER"
       
       - name: Parse platforms input
         id: parse-platforms
@@ -438,17 +449,17 @@ jobs:
           
           # GHCR tags - 使用全小写的仓库名称
           if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
-            TAGS="$TAGS,ghcr.io/$REPOSITORY_LOWER:${{ needs.setup-platforms.outputs.version }}"
+            TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
             if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-              TAGS="$TAGS,ghcr.io/$REPOSITORY_LOWER:latest"
+              TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:latest"
             fi
           fi
           
           # Docker Hub tags (only if credentials available)
           if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
-            TAGS="$TAGS,$DOCKERHUB_USERNAME/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):${{ needs.setup-platforms.outputs.version }}"
+            TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
             if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-              TAGS="$TAGS,$DOCKERHUB_USERNAME/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):latest"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:latest"
             fi
           fi
           
@@ -512,24 +523,24 @@ jobs:
           # GHCR tags - 使用全小写的仓库名称
           if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
             if [ "${{ inputs.release }}" = "true" ]; then
-              TAGS="$TAGS,ghcr.io/$REPOSITORY_LOWER:${{ needs.setup-platforms.outputs.version }}"
+              TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
               if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-                TAGS="$TAGS,ghcr.io/$REPOSITORY_LOWER:latest"
+                TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:latest"
               fi
             else
-              TAGS="$TAGS,ghcr.io/$REPOSITORY_LOWER:standalone-${{ github.sha }}"
+              TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:standalone-${{ github.sha }}"
             fi
           fi
           
           # Docker Hub tags (only if credentials available)
           if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
             if [ "${{ inputs.release }}" = "true" ]; then
-              TAGS="$TAGS,$DOCKERHUB_USERNAME/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):${{ needs.setup-platforms.outputs.version }}"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
               if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-                TAGS="$TAGS,$DOCKERHUB_USERNAME/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):latest"
+                TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:latest"
               fi
             else
-              TAGS="$TAGS,$DOCKERHUB_USERNAME/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):standalone-${{ github.sha }}"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:standalone-${{ github.sha }}"
             fi
           fi
           
@@ -632,10 +643,10 @@ jobs:
             if [ "${{ inputs.release }}" = "true" ]; then
               echo "  Mode: 🚀 Pushed to registry"
               if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
-                echo "  ✅ GHCR: ghcr.io/$REPOSITORY_LOWER:${{ needs.setup-platforms.outputs.version }}"
+                echo "  ✅ GHCR: ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
               fi
               if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
-                echo "  ✅ Docker Hub: ${{ env.DOCKERHUB_USERNAME }}/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]'):${{ needs.setup-platforms.outputs.version }}"
+                echo "  ✅ Docker Hub: ${{ env.DOCKERHUB_USERNAME }}/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
               elsif [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ]; then
                 echo "  ⚠️ Docker Hub: Skipped (credentials not configured)"
               fi
@@ -657,10 +668,10 @@ jobs:
           fi
           if [ "${{ inputs.build_docker }}" = "true" ] && [ "${{ inputs.release }}" = "true" ]; then
             if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
-              echo "  🐳 GHCR: https://ghcr.io/$REPOSITORY_LOWER"
+              echo "  🐳 GHCR: https://ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}"
             fi
             if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
-              echo "  🐳 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/$(echo "$BINARY_NAME" | tr '[:upper:]' '[:lower:]')"
+              echo "  🐳 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/${{ needs.setup-platforms.outputs.binary_name_lower }}"
             fi
           fi
           
