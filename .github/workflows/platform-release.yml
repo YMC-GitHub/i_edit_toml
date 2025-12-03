@@ -42,29 +42,34 @@ jobs:
             arch: x86_64
             targets: 'x86_64-pc-windows-msvc,x86_64-pc-windows-gnu'
             file_extension: '.exe'
+            components: ''  # 添加 components 字段
           
           # Linux 目标
           - os: ubuntu-latest
             arch: x86_64
             targets: 'x86_64-unknown-linux-gnu,x86_64-unknown-linux-musl'
             file_extension: ''
+            components: ''
           
           # macOS 目标
           - os: macos-latest
             arch: x86_64
             targets: 'x86_64-apple-darwin'
             file_extension: ''
+            components: ''
           
           # ARM 目标（交叉编译）
           - os: ubuntu-latest
             arch: aarch64
             targets: 'aarch64-unknown-linux-gnu,aarch64-unknown-linux-musl'
             file_extension: ''
+            components: 'rust-std-aarch64-unknown-linux-gnu'  # 预定义 components
           
           - os: ubuntu-latest
             arch: armv7
             targets: 'armv7-unknown-linux-gnueabihf'
             file_extension: ''
+            components: 'rust-std-armv7-unknown-linux-gnueabihf'
     
     steps:
       - name: Checkout repository
@@ -74,9 +79,12 @@ jobs:
         id: matrix
         run: |
           # 使用统一的脚本
+          PLATFORMS="${{ github.event.inputs.platforms || 'windows,linux,macos' }}"
+          ARCHITECTURES="${{ github.event.inputs.architectures || 'x86_64' }}"
+          
           output=$(bash scripts/build-release.sh build \
-            --platforms="${{ github.event.inputs.platforms || 'windows,linux,macos' }}" \
-            --architectures="${{ github.event.inputs.architectures || 'x86_64' }}" \
+            --platforms="$PLATFORMS" \
+            --architectures="$ARCHITECTURES" \
             --os-name="${{ matrix.os }}" \
             --arch="${{ matrix.arch }}" \
             --targets="${{ matrix.targets }}" \
@@ -84,17 +92,11 @@ jobs:
             --file-extension="${{ matrix.file_extension }}")
           
           echo "$output"
-          echo "$output" | grep -E "^build_this=" | cut -d= -f2 >> $GITHUB_OUTPUT
-
-      - name: Set up Rust toolchain components
-        if: steps.matrix.outputs.build_this == 'true'
-        run: |
-          if [[ "${{ matrix.arch }}" != "x86_64" ]]; then
-            # 获取第一个 target
-            FIRST_TARGET="${{ matrix.targets.split(',')[0] }}"
-            echo "COMPONENTS=rust-std-$FIRST_TARGET" >> $GITHUB_ENV
+          # 提取构建标志
+          if echo "$output" | grep -q "build_this=true"; then
+            echo "build_this=true" >> $GITHUB_OUTPUT
           else
-            echo "COMPONENTS=" >> $GITHUB_ENV
+            echo "build_this=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Install Rust toolchain
@@ -102,14 +104,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
-          components: ${{ env.COMPONENTS }}
+          components: ${{ matrix.components }}
 
       - name: Install cross-compilation tools (Linux -> other arches)
         if: steps.matrix.outputs.build_this == 'true' && runner.os == 'Linux' && matrix.arch != 'x86_64'
         run: |
-          # 直接从脚本调用函数（这里需要 source）
-          source scripts/build-release.sh
-          install_cross_compile_tools "${{ matrix.arch }}"
+          # 直接从脚本调用函数
+          bash scripts/build-release.sh --install-cross-tools "${{ matrix.arch }}"
 
       - name: Cache cargo registry
         if: steps.matrix.outputs.build_this == 'true'
@@ -127,30 +128,30 @@ jobs:
         if: steps.matrix.outputs.build_this == 'true'
         run: |
           # 直接从脚本调用函数
-          source scripts/build-release.sh
-          build_targets \
-            "${{ matrix.targets }}" \
-            "${{ runner.os }}" \
-            "${{ matrix.arch }}" \
-            "${{ env.BINARY_NAME }}" \
-            "${{ matrix.file_extension }}"
+          bash scripts/build-release.sh --build-targets \
+            --targets="${{ matrix.targets }}" \
+            --runner-os="${{ runner.os }}" \
+            --arch="${{ matrix.arch }}" \
+            --binary-name="${{ env.BINARY_NAME }}" \
+            --file-extension="${{ matrix.file_extension }}"
 
       - name: Prepare artifacts
         if: steps.matrix.outputs.build_this == 'true'
         id: prepare_artifacts
         run: |
           # 直接从脚本调用函数
-          source scripts/build-release.sh
-          output=$(prepare_artifacts \
-            "${{ matrix.targets }}" \
-            "${{ runner.os }}" \
-            "${{ env.BINARY_NAME }}" \
-            "${{ matrix.file_extension }}" \
-            "${{ matrix.arch }}" \
-            "${{ matrix.os }}")
+          output=$(bash scripts/build-release.sh --prepare-artifacts \
+            --targets="${{ matrix.targets }}" \
+            --runner-os="${{ runner.os }}" \
+            --binary-name="${{ env.BINARY_NAME }}" \
+            --file-extension="${{ matrix.file_extension }}" \
+            --arch="${{ matrix.arch }}" \
+            --os-name="${{ matrix.os }}")
           
           echo "$output"
-          echo "$output" | grep -E "^artifact_dir=" | cut -d= -f2 >> $GITHUB_ENV
+          # 提取 artifact_dir
+          artifact_dir=$(echo "$output" | grep -E "^artifact_dir=" | cut -d= -f2)
+          echo "artifact_dir=$artifact_dir" >> $GITHUB_ENV
 
       - name: Upload artifacts
         if: steps.matrix.outputs.build_this == 'true'
@@ -166,7 +167,7 @@ jobs:
     needs: build
     permissions:
       contents: write
-    if: >
+    if: |
       (github.event.inputs.enable_release == 'true' ||
       github.event.inputs.enable_release == null) &&
       (github.event.inputs.debug_mode == 'false' ||
@@ -201,8 +202,11 @@ jobs:
           echo "$output"
           
           # 提取输出变量
-          echo "$output" | grep -E "^release_dir=" | cut -d= -f2 >> $GITHUB_ENV
-          echo "$output" | grep -E "^release_notes=" | cut -d= -f2 >> $GITHUB_OUTPUT
+          release_dir=$(echo "$output" | grep -E "^release_dir=" | cut -d= -f2)
+          release_notes=$(echo "$output" | grep -E "^release_notes=" | cut -d= -f2)
+          
+          echo "release_dir=$release_dir" >> $GITHUB_ENV
+          echo "release_notes=$release_notes" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
