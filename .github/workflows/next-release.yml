@@ -3,10 +3,10 @@ name: Multi-Platform Build and Release
 on:
   workflow_dispatch:
     inputs:
-      debug_mode:
-        description: 'Enable debug mode (no push to registry, save artifacts)'
+      release:
+        description: 'Create release (push images, create GitHub Release)'
         required: false
-        default: false
+        default: true
         type: boolean
       platforms:
         description: 'Platforms to build (comma separated: linux,windows,macos)'
@@ -14,10 +14,15 @@ on:
         default: 'linux,windows,macos'
         type: string
       build_docker:
-        description: 'Build and push Docker image'
+        description: 'Build Docker image'
         required: false
         default: true
         type: boolean
+      docker_registries:
+        description: 'Docker registries to push to (comma separated: ghcr.io,docker.io)'
+        required: false
+        default: 'ghcr.io'
+        type: string
       use_china_mirror:
         description: 'Use China mirror for faster downloads'
         required: false
@@ -25,7 +30,6 @@ on:
         type: boolean
 
 env:
-  REGISTRY: ghcr.io
   BINARY_NAME: ${{ github.event.repository.name }}
 
 jobs:
@@ -36,12 +40,21 @@ jobs:
       build_linux: ${{ steps.parse-platforms.outputs.build_linux }}
       build_windows: ${{ steps.parse-platforms.outputs.build_windows }}
       build_macos: ${{ steps.parse-platforms.outputs.build_macos }}
+      version: ${{ steps.get-version.outputs.version }}
+      has_binaries: ${{ steps.check-binaries.outputs.has_binaries }}
+      push_ghcr: ${{ steps.parse-registries.outputs.push_ghcr }}
+      push_dockerhub: ${{ steps.parse-registries.outputs.push_dockerhub }}
+      any_registry: ${{ steps.parse-registries.outputs.any_registry }}
     
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
       - name: Parse platforms input
         id: parse-platforms
         run: |
           PLATFORMS=$(echo "${{ inputs.platforms }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          echo "Parsing platforms: $PLATFORMS"
           
           if [[ "$PLATFORMS" == *"linux"* ]]; then
             echo "build_linux=true" >> $GITHUB_OUTPUT
@@ -60,9 +73,59 @@ jobs:
           else
             echo "build_macos=false" >> $GITHUB_OUTPUT
           fi
+      
+      - name: Parse docker registries
+        id: parse-registries
+        run: |
+          REGISTRIES=$(echo "${{ inputs.docker_registries }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          echo "Parsing registries: $REGISTRIES"
+          
+          if [[ "$REGISTRIES" == *"ghcr.io"* ]] || [[ "$REGISTRIES" == *"ghcr"* ]]; then
+            echo "push_ghcr=true" >> $GITHUB_OUTPUT
+          else
+            echo "push_ghcr=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$REGISTRIES" == *"docker.io"* ]] || [[ "$REGISTRIES" == *"dockerhub"* ]] || [[ "$REGISTRIES" == *"hub.docker.com"* ]]; then
+            echo "push_dockerhub=true" >> $GITHUB_OUTPUT
+          else
+            echo "push_dockerhub=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "$REGISTRIES" == *"ghcr"* ]] || [[ "$REGISTRIES" == *"docker"* ]] || [[ -n "$REGISTRIES" ]]; then
+            echo "any_registry=true" >> $GITHUB_OUTPUT
+          else
+            echo "any_registry=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Get version from tag
+        id: get-version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            VERSION="latest"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
+          echo "🏷️ Version: $VERSION"
+      
+      - name: Check if any binaries will be built
+        id: check-binaries
+        run: |
+          if [[ "${{ inputs.platforms }}" == *"linux"* ]] || \
+             [[ "${{ inputs.platforms }}" == *"windows"* ]] || \
+             [[ "${{ inputs.platforms }}" == *"macos"* ]]; then
+            echo "has_binaries=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_binaries=false" >> $GITHUB_OUTPUT
+          fi
 
-  build-linux-binary:
-    name: Build Linux Static Binary
+  build-linux:
+    name: Build Linux Binary
     runs-on: ubuntu-latest
     needs: setup-platforms
     if: ${{ needs.setup-platforms.outputs.build_linux == 'true' }}
@@ -88,6 +151,7 @@ jobs:
           
           echo "📊 Binary info:"
           file target/x86_64-unknown-linux-musl/release/$BINARY_NAME
+          ls -lh target/x86_64-unknown-linux-musl/release/$BINARY_NAME
       
       - name: Test binary
         run: |
@@ -104,111 +168,20 @@ jobs:
           chmod +x release-binaries/$BINARY_NAME-linux-amd64
           
           FILE_SIZE=$(du -h release-binaries/$BINARY_NAME-linux-amd64 | cut -f1)
-          echo "binary_size=$FILE_SIZE" >> $GITHUB_OUTPUT
           echo "📄 Binary: $BINARY_NAME-linux-amd64 ($FILE_SIZE)"
       
-      - name: Upload Linux binary artifact
+      - name: Upload Linux binary
         uses: actions/upload-artifact@v4
         with:
-          name: linux-static-binary
-          path: release-binaries
-          retention-days: 1
-
-  build-docker:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: setup-platforms
-    if: ${{ inputs.build_docker }}
-    permissions:
-      contents: read
-      packages: write
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up lowercase repository name
-        id: repo
-        run: |
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "repo_lower=$REPO_LOWER" >> $GITHUB_OUTPUT
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GitHub Container Registry
-        if: ${{ !inputs.debug_mode }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Extract Docker image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.repo_lower }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,prefix=git-
-      
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64
-          push: ${{ !inputs.debug_mode }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          outputs: ${{ inputs.debug_mode && 'type=docker,dest=/tmp/image.tar' || '' }}
-      
-      - name: Test Docker image (debug mode)
-        if: ${{ inputs.debug_mode }}
-        run: |
-          echo "🔧 Debug mode: Testing Docker image..."
-          
-          # 加载本地保存的镜像
-          docker load -i /tmp/image.tar
-          
-          # 获取镜像信息
-          IMAGE_ID=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
-          echo "Loaded image: $IMAGE_ID"
-          
-          # 测试容器运行
-          docker run --rm "$IMAGE_ID" --version || \
-          docker run --rm "$IMAGE_ID" --help || \
-          echo "✅ Docker container runs successfully"
-      
-      - name: Save debug artifacts
-        if: ${{ inputs.debug_mode }}
-        run: |
-          mkdir -p /tmp/debug-artifacts
-          cp /tmp/image.tar /tmp/debug-artifacts/docker-image-debug.tar
-          echo "✅ Debug artifacts saved"
-      
-      - name: Upload debug artifacts
-        if: ${{ inputs.debug_mode }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image-debug
-          path: /tmp/debug-artifacts/
+          name: linux-binary
+          path: release-binaries/
           retention-days: 1
 
   build-windows:
-    name: Build Windows Binaries
+    name: Build Windows Binary
     runs-on: windows-latest
     needs: setup-platforms
     if: ${{ needs.setup-platforms.outputs.build_windows == 'true' }}
-    strategy:
-      matrix:
-        target: [x86_64-pc-windows-msvc]
     
     steps:
       - name: Checkout repository
@@ -217,21 +190,24 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          target: x86_64-pc-windows-msvc
       
       - name: Build
         run: |
-          echo "🏗️ Building for target: ${{ matrix.target }}"
-          cargo build --release --target ${{ matrix.target }}
+          echo "🏗️ Building Windows binary..."
+          cargo build --release --target x86_64-pc-windows-msvc
+          
+          echo "📊 Binary info:"
+          dir "target\x86_64-pc-windows-msvc\release\$env:BINARY_NAME.exe"
       
       - name: Test binary
         run: |
-          $binaryPath = "target\${{ matrix.target }}\release\$env:BINARY_NAME.exe"
+          $binaryPath = "target\x86_64-pc-windows-msvc\release\$env:BINARY_NAME.exe"
           & $binaryPath --version || & $binaryPath --help || echo "✅ Binary test completed"
       
       - name: Prepare artifact
         run: |
-          $binaryPath = "target\${{ matrix.target }}\release\$env:BINARY_NAME.exe"
+          $binaryPath = "target\x86_64-pc-windows-msvc\release\$env:BINARY_NAME.exe"
           $artifactDir = "release-artifacts"
           
           New-Item -ItemType Directory -Force -Path $artifactDir
@@ -240,9 +216,9 @@ jobs:
           
           $fileInfo = Get-Item "$artifactDir\$outputName"
           $fileSize = [math]::Round($fileInfo.Length / 1MB, 2)
-          echo "✅ Prepared: $outputName (${fileSize} MB)"
+          echo "📄 Binary: $outputName (${fileSize} MB)"
       
-      - name: Upload Windows artifact
+      - name: Upload Windows binary
         uses: actions/upload-artifact@v4
         with:
           name: windows-binary
@@ -271,6 +247,9 @@ jobs:
         run: |
           echo "🏗️ Building for target: ${{ matrix.target }}"
           cargo build --release --target ${{ matrix.target }}
+          
+          echo "📊 Binary info:"
+          file target/${{ matrix.target }}/release/$BINARY_NAME
       
       - name: Test binary
         run: |
@@ -294,9 +273,9 @@ jobs:
           chmod +x "$artifact_dir/$output_name"
           
           file_size=$(du -h "$artifact_dir/$output_name" | cut -f1)
-          echo "✅ Prepared: $output_name (${file_size})"
+          echo "📄 Binary: $output_name (${file_size})"
       
-      - name: Upload macOS artifacts
+      - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.target }}
@@ -304,21 +283,18 @@ jobs:
           retention-days: 1
 
   create-release:
-    name: Create Unified Release
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: 
       - setup-platforms
-      - build-linux-binary
+      - build-linux
       - build-windows
       - build-macos
     permissions:
       contents: write
     if: >
-      !inputs.debug_mode &&
-      startsWith(github.ref, 'refs/tags/v') &&
-      (needs.setup-platforms.outputs.build_linux == 'true' ||
-       needs.setup-platforms.outputs.build_windows == 'true' ||
-       needs.setup-platforms.outputs.build_macos == 'true')
+      ${{ inputs.release }} &&
+      needs.setup-platforms.outputs.has_binaries == 'true'
     
     steps:
       - name: Checkout repository
@@ -328,10 +304,10 @@ jobs:
         if: ${{ needs.setup-platforms.outputs.build_linux == 'true' }}
         uses: actions/download-artifact@v4
         with:
-          name: linux-static-binary
+          name: linux-binary
           path: release-assets
       
-      - name: Download Windows binaries
+      - name: Download Windows binary
         if: ${{ needs.setup-platforms.outputs.build_windows == 'true' }}
         uses: actions/download-artifact@v4
         with:
@@ -349,72 +325,336 @@ jobs:
         run: |
           mkdir -p final-release
           
-          # 移动所有文件到 final-release，确保正确的命名
-          find release-assets -type f ! -name "*.json" | while read file; do
-            filename=$(basename "$file")
-            
-            # 标准化文件名
-            if [[ "$filename" == *"linux-amd64" ]]; then
-              cp "$file" "final-release/$filename"
-            elif [[ "$filename" == *".exe" ]]; then
-              cp "$file" "final-release/$filename"
-            elif [[ "$filename" == *"macos-"* ]]; then
-              cp "$file" "final-release/$filename"
-            else
-              # 重命名以确保一致性
-              new_name=$(echo "$filename" | sed -E 's/.*(x86_64|aarch64).*\.exe$/$BINARY_NAME-windows-amd64.exe/')
-              cp "$file" "final-release/$filename"
-            fi
-          done
+          echo "📦 Collecting release files..."
           
-          echo "📦 Release files:"
-          ls -la final-release/
+          # Linux 二进制
+          if [ -d "release-assets/linux-binary" ]; then
+            find release-assets/linux-binary -type f ! -name "*.json" | while read file; do
+              filename=$(basename "$file")
+              cp "$file" "final-release/$filename"
+              echo "✅ Added: $filename"
+            done
+          fi
+          
+          # Windows 二进制
+          if [ -d "release-assets/windows-binary" ]; then
+            find release-assets/windows-binary -type f ! -name "*.json" | while read file; do
+              filename=$(basename "$file")
+              cp "$file" "final-release/$filename"
+              echo "✅ Added: $filename"
+            done
+          fi
+          
+          # macOS 二进制
+          if [ -d "release-assets" ]; then
+            find release-assets -type f -name "macos-*" ! -name "*.json" | while read file; do
+              filename=$(basename "$file")
+              cp "$file" "final-release/$filename"
+              echo "✅ Added: $filename"
+            done
+          fi
+          
+          echo "📄 Release files:"
+          ls -lh final-release/
       
       - name: Create checksums
         run: |
           cd final-release
+          echo "🔐 Creating checksums..."
           for file in *; do
-            sha256sum "$file" > "$file.sha256"
-            sha512sum "$file" > "$file.sha512"
-            echo "✅ $file"
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+              sha512sum "$file" > "$file.sha512"
+              echo "✅ Checksums for: $file"
+            fi
           done
       
-      - uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
           files: final-release/*
           generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(needs.setup-platforms.outputs.version, '-alpha') || contains(needs.setup-platforms.outputs.version, '-beta') || contains(needs.setup-platforms.outputs.version, '-rc') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  debug-mode-report:
-    name: Debug Mode Report
+  build-docker-with-release:
+    name: Build Docker Image (with Release)
     runs-on: ubuntu-latest
     needs: 
       - setup-platforms
-      - build-linux-binary
-      - build-docker
-      - build-windows
-      - build-macos
-    if: ${{ inputs.debug_mode }}
+      - create-release
+    if: >
+      ${{ inputs.build_docker && inputs.release &&
+          needs.setup-platforms.outputs.has_binaries == 'true' &&
+          needs.setup-platforms.outputs.any_registry == 'true' }}
+    permissions:
+      contents: read
+      packages: write
     
     steps:
-      - name: Debug report
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GHCR
+        if: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Log in to Docker Hub
+        if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && secrets.DOCKERHUB_USERNAME }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Prepare Docker tags
+        id: prepare-tags
         run: |
-          echo "🔧 Debug Mode Completed Successfully!"
-          echo "===================================="
-          echo "📋 Selected platforms: ${{ inputs.platforms }}"
+          TAGS=""
+          
+          # GHCR tags
+          if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
+            TAGS="$TAGS,ghcr.io/${{ github.repository }}:${{ needs.setup-platforms.outputs.version }}"
+            if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
+              TAGS="$TAGS,ghcr.io/${{ github.repository }}:latest"
+            fi
+          fi
+          
+          # Docker Hub tags
+          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+            if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
+              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:latest"
+            fi
+          fi
+          
+          # 移除开头的逗号
+          TAGS="${TAGS#,}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "📦 Docker tags: $TAGS"
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.prepare-tags.outputs.tags }}
+          build-args: |
+            USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-docker-standalone:
+    name: Build Docker Image (Standalone)
+    runs-on: ubuntu-latest
+    needs: setup-platforms
+    if: >
+      ${{ inputs.build_docker && 
+          needs.setup-platforms.outputs.has_binaries == 'false' &&
+          needs.setup-platforms.outputs.any_registry == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GHCR (release mode)
+        if: ${{ inputs.release && needs.setup-platforms.outputs.push_ghcr == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Log in to Docker Hub (release mode)
+        if: ${{ inputs.release && needs.setup-platforms.outputs.push_dockerhub == 'true' && secrets.DOCKERHUB_USERNAME }}
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Prepare Docker tags
+        id: prepare-tags-standalone
+        run: |
+          TAGS=""
+          
+          # GHCR tags
+          if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
+            if [ "${{ inputs.release }}" = "true" ]; then
+              TAGS="$TAGS,ghcr.io/${{ github.repository }}:${{ needs.setup-platforms.outputs.version }}"
+              if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
+                TAGS="$TAGS,ghcr.io/${{ github.repository }}:latest"
+              fi
+            else
+              TAGS="$TAGS,ghcr.io/${{ github.repository }}:standalone-${{ github.sha }}"
+            fi
+          fi
+          
+          # Docker Hub tags
+          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            if [ "${{ inputs.release }}" = "true" ]; then
+              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+              if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
+                TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:latest"
+              fi
+            else
+              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:standalone-${{ github.sha }}"
+            fi
+          fi
+          
+          # 移除开头的逗号
+          TAGS="${TAGS#,}"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "📦 Docker tags: $TAGS"
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ inputs.release }}
+          tags: ${{ steps.prepare-tags-standalone.outputs.tags }}
+          build-args: |
+            USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: ${{ !inputs.release && 'type=docker,dest=/tmp/image.tar' || '' }}
+      
+      - name: Test Docker image locally (non-release)
+        if: ${{ !inputs.release }}
+        run: |
+          echo "🔧 Testing standalone Docker image..."
+          docker load -i /tmp/image.tar
+          IMAGE_ID=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+          docker run --rm "$IMAGE_ID" --version || \
+          docker run --rm "$IMAGE_ID" --help || \
+          echo "✅ Standalone image test complete"
+      
+      - name: Save local artifacts (non-release)
+        if: ${{ !inputs.release }}
+        run: |
+          mkdir -p /tmp/local-artifacts
+          cp /tmp/image.tar /tmp/local-artifacts/docker-image-local.tar
+          echo "✅ Local artifacts saved"
+      
+      - name: Upload local artifacts (non-release)
+        if: ${{ !inputs.release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-local
+          path: /tmp/local-artifacts/
+          retention-days: 1
+
+  build-report:
+    name: Build and Release Report
+    runs-on: ubuntu-latest
+    needs: 
+      - setup-platforms
+      - build-linux
+      - build-windows
+      - build-macos
+      - create-release
+      - build-docker-with-release
+      - build-docker-standalone
+    if: always()
+    
+    steps:
+      - name: Generate final report
+        run: |
+          echo "🎉 Build Pipeline Completed"
+          echo "========================="
           echo ""
-          echo "🏗️ Build status:"
-          echo "  🐧 Linux static binary: ${{ needs.setup-platforms.outputs.build_linux && '✅ Built' || '⏸️  Skipped' }}"
-          echo "  🐳 Docker image: ${{ inputs.build_docker && '✅ Built (local)' || '⏸️  Skipped' }}"
-          echo "  🪟 Windows binaries: ${{ needs.setup-platforms.outputs.build_windows && '✅ Built' || '⏸️  Skipped' }}"
-          echo "  🍎 macOS binaries: ${{ needs.setup-platforms.outputs.build_macos && '✅ Built' || '⏸️  Skipped' }}"
+          echo "⚙️ Configuration Summary:"
+          echo "  Release mode: ${{ inputs.release && '🚀 RELEASE' || '🔧 LOCAL BUILD' }}"
+          echo "  Platforms: ${{ inputs.platforms || 'None (Docker only)' }}"
+          echo "  Docker build: ${{ inputs.build_docker && '✅ Yes' || '⏸️ No' }}"
+          echo "  Docker registries: ${{ inputs.docker_registries || 'None' }}"
+          echo "  China mirror: ${{ inputs.use_china_mirror && '✅ Enabled' || '⏸️ Disabled' }}"
           echo ""
-          echo "💾 All artifacts saved locally"
-          echo "🚫 No images pushed to registry"
-          echo "🚫 No release created"
+          echo "📊 Build Results:"
           echo ""
-          echo "🔄 To publish, re-run with:"
-          echo "  - debug_mode: false"
-          echo "  - platforms: '${{ inputs.platforms }}'"
-          echo "  - build_docker: ${{ inputs.build_docker }}"
+          
+          # 二进制构建状态
+          if [ "${{ needs.setup-platforms.outputs.has_binaries }}" = "true" ]; then
+            echo "📦 Binary Artifacts:"
+            echo "  🐧 Linux: ${{ needs.setup-platforms.outputs.build_linux && '✅ Built' || '⏸️ Skipped' }}"
+            echo "  🪟 Windows: ${{ needs.setup-platforms.outputs.build_windows && '✅ Built' || '⏸️ Skipped' }}"
+            echo "  🍎 macOS: ${{ needs.setup-platforms.outputs.build_macos && '✅ Built' || '⏸️ Skipped' }}"
+            echo ""
+            
+            if [ "${{ inputs.release }}" = "true" ]; then
+              echo "🚀 GitHub Release: ✅ Created"
+              echo "  Version: ${{ needs.setup-platforms.outputs.version }}"
+              echo "  Files: Binaries + SHA256/SHA512 checksums"
+            else
+              echo "📥 Artifacts: ✅ Saved as GitHub Actions artifacts"
+            fi
+          else
+            echo "📦 Binaries: ⏸️ Not built (Docker only mode)"
+            echo ""
+          fi
+          
+          # Docker 状态
+          if [ "${{ inputs.build_docker }}" = "true" ]; then
+            echo "🐳 Docker Image:"
+            
+            if [ "${{ inputs.release }}" = "true" ]; then
+              echo "  Mode: 🚀 Pushed to registry"
+              if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
+                echo "  ✅ GHCR: ghcr.io/${{ github.repository }}:${{ needs.setup-platforms.outputs.version }}"
+              fi
+              if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+                echo "  ✅ Docker Hub: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+              fi
+            else
+              echo "  Mode: 🔧 Local build (testing)"
+              echo "  ✅ Image saved locally for testing"
+              if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
+                echo "  Tag: standalone-${{ github.sha }}"
+              fi
+            fi
+          else
+            echo "🐳 Docker Image: ⏸️ Not built"
+          fi
+          
+          echo ""
+          echo "🔗 Access Links:"
+          if [ "${{ inputs.release }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_binaries }}" = "true" ]; then
+            echo "  📦 GitHub Release: https://github.com/${{ github.repository }}/releases"
+          fi
+          if [ "${{ inputs.build_docker }}" = "true" ] && [ "${{ inputs.release }}" = "true" ]; then
+            if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
+              echo "  🐳 GHCR: https://ghcr.io/${{ github.repository }}"
+            fi
+            if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+              echo "  🐳 Docker Hub: https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}"
+            fi
+          fi
+          
+          echo ""
+          echo "⏱️  Next Steps:"
+          if [ "${{ inputs.release }}" = "true" ]; then
+            echo "  1. Verify the released binaries on GitHub"
+            echo "  2. Test the Docker image from registry"
+            echo "  3. Update documentation with new version"
+          else
+            echo "  1. Download artifacts for local testing"
+            echo "  2. Run integration tests"
+            echo "  3. When ready, re-run with release:true"
+          fi
