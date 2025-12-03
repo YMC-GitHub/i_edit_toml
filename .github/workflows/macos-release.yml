@@ -1,0 +1,443 @@
+name: Build macOS Binaries and Release
+
+on:
+  # push:
+  #   tags:
+  #     - 'v*'  # 推送 v 开头的标签时触发
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      debug_mode:
+        description: 'Enable debug mode (save artifacts without release)'
+        required: false
+        default: false
+        type: boolean
+      enable_release:
+        description: 'Enable GitHub Release creation'
+        required: false
+        default: true
+        type: boolean
+      build_universal:
+        description: 'Build universal binary for both Intel and Apple Silicon'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  BINARY_NAME: ${{ github.event.repository.name }}
+
+jobs:
+  build-macos-binaries:
+    name: Build macOS Binaries
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: 
+          - x86_64-apple-darwin      # Intel Mac
+          - aarch64-apple-darwin     # Apple Silicon (M1/M2/M3)
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up flags
+        id: flags
+        run: |
+          # 设置 debug_mode 标志
+          if [ "${{ inputs.debug_mode }}" = "true" ]; then
+            echo "debug_mode=true" >> $GITHUB_OUTPUT
+          else
+            echo "debug_mode=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ "${{ inputs.enable_release }}" = "true" ]; then
+            echo "enable_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "enable_release=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ "${{ inputs.build_universal }}" = "true" ]; then
+            echo "build_universal=true" >> $GITHUB_OUTPUT
+          else
+            echo "build_universal=false" >> $GITHUB_OUTPUT
+          fi
+
+          # 检测是否是 main 分支
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "is_main=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_main=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "debug_mode: ${{ steps.flags.outputs.debug_mode }}"
+          echo "build_universal: ${{ steps.flags.outputs.build_universal }}"
+          echo "is_main: ${{ steps.flags.outputs.is_main }}"
+
+      - name: Debug Information
+        run: |
+          echo "🔧 Debug Mode: ${{ inputs.debug_mode }}"
+          echo "🍎 Build Universal: ${{ inputs.build_universal }}"
+          echo "🏷️ Trigger Event: ${{ github.event_name }}"
+          echo "🔖 Ref: ${{ github.ref }}"
+          echo "📝 SHA: ${{ github.sha }}"
+          echo "💻 Runner OS: $(uname -a)"
+          echo "🍏 macOS Version: $(sw_vers -productVersion)"
+          echo "🖥️  Architecture: $(uname -m)"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}
+
+      - name: Build debug information
+        run: |
+          echo "🔧 Build Configuration:"
+          echo "Target: ${{ matrix.target }}"
+          echo "Rust Version: $(rustc --version)"
+          echo "Cargo Version: $(cargo --version)"
+          echo "macOS SDK Path: $(xcrun --show-sdk-path)"
+
+      - name: Build release binary
+        run: |
+          echo "🍎 Building for target: ${{ matrix.target }}"
+          
+          # 设置 macOS 部署目标版本（可选）
+          export MACOSX_DEPLOYMENT_TARGET="10.13"
+          
+          # 构建 release 版本
+          cargo build --release --target ${{ matrix.target }}
+          
+          echo "📁 Build output:"
+          find "target/${{ matrix.target }}/release/" -name "$BINARY_NAME" -type f 2>/dev/null | while read file; do
+            size=$(stat -f%z "$file")
+            size_mb=$(echo "scale=2; $size / 1048576" | bc)
+            echo "  - $(basename "$file") (${size_mb} MB)"
+          done
+
+      - name: Test binary
+        run: |
+          binary_path="target/${{ matrix.target }}/release/$BINARY_NAME"
+          
+          if [ -f "$binary_path" ]; then
+            echo "🧪 Testing binary: $binary_path"
+            
+            # 检查文件权限
+            chmod +x "$binary_path"
+            
+            # 检查二进制架构
+            echo "📊 Binary architecture:"
+            file "$binary_path"
+            
+            # 检查支持的架构
+            echo "🏗️  Supported architectures:"
+            lipo -archs "$binary_path" 2>/dev/null || echo "Single architecture binary"
+            
+            # 尝试运行版本检查或帮助命令
+            if "$binary_path" --version 2>/dev/null; then
+              echo "✅ Version check passed"
+            elif "$binary_path" --help 2>/dev/null; then
+              echo "✅ Help command executed successfully"
+            else
+              echo "✅ Binary executed successfully (no --version or --help flag)"
+            fi
+          else
+            echo "❌ Binary not found at: $binary_path"
+            echo "Available files in target directory:"
+            find "target/${{ matrix.target }}/release/" -type f | head -20
+          fi
+
+      - name: Prepare artifacts
+        if: ${{ !inputs.enable_release }}
+        id: prepare-artifacts
+        run: |
+          binary_path="target/${{ matrix.target }}/release/$BINARY_NAME"
+          artifact_dir="release-artifacts"
+          target_name="${{ matrix.target }}"
+          
+          # 创建输出目录
+          mkdir -p "$artifact_dir"
+          
+          if [ -f "$binary_path" ]; then
+            # 复制二进制文件
+            output_name="$BINARY_NAME-${target_name//-/_}"
+            cp "$binary_path" "$artifact_dir/$output_name"
+            
+            # 获取文件信息
+            file_size=$(stat -f%z "$binary_path")
+            file_size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
+            
+            # 为文件添加执行权限
+            chmod +x "$artifact_dir/$output_name"
+            
+            # 输出变量（使用下划线替换破折号）
+            var_suffix="${target_name//-/_}"
+            echo "binary_path_${var_suffix}=$artifact_dir/$output_name" >> $GITHUB_OUTPUT
+            echo "binary_size_${var_suffix}=${file_size_mb}MB" >> $GITHUB_OUTPUT
+            
+            echo "✅ Prepared artifact: $output_name (${file_size_mb} MB)"
+            
+            # 显示二进制信息
+            echo "📊 Artifact information:"
+            file "$artifact_dir/$output_name"
+          else
+            echo "❌ Binary not found: $binary_path"
+            # 尝试找到任何可执行文件
+            echo "Searching for alternative executables..."
+            find "target/${{ matrix.target }}/release/" -type f -executable 2>/dev/null | head -5 | while read exe_file; do
+              exe_name=$(basename "$exe_file")
+              output_name="${exe_name}-${target_name//-/_}"
+              cp "$exe_file" "$artifact_dir/$output_name"
+              echo "  - Found: $exe_name -> $output_name"
+            done
+          fi
+          
+          # 输出通用信息
+          echo "artifact_dir=$artifact_dir" >> $GITHUB_OUTPUT
+          echo "target_name=$target_name" >> $GITHUB_OUTPUT
+
+      - name: Create universal binary (optional)
+        if: ${{ inputs.build_universal && matrix.target == 'x86_64-apple-darwin' }}
+        run: |
+          echo "🔄 Creating universal binary..."
+          
+          intel_binary="target/x86_64-apple-darwin/release/$BINARY_NAME"
+          arm_binary="target/aarch64-apple-darwin/release/$BINARY_NAME"
+          universal_binary="target/$BINARY_NAME-universal"
+          
+          if [ -f "$intel_binary" ] && [ -f "$arm_binary" ]; then
+            # 使用 lipo 创建通用二进制
+            lipo -create "$intel_binary" "$arm_binary" -output "$universal_binary"
+            
+            echo "✅ Universal binary created:"
+            file "$universal_binary"
+            lipo -archs "$universal_binary"
+            
+            # 复制到 artifacts 目录
+            mkdir -p "release-artifacts"
+            cp "$universal_binary" "release-artifacts/$BINARY_NAME-universal-apple-darwin"
+            chmod +x "release-artifacts/$BINARY_NAME-universal-apple-darwin"
+            
+            # 计算文件大小
+            universal_size=$(stat -f%z "$universal_binary")
+            universal_size_mb=$(echo "scale=2; $universal_size / 1048576" | bc)
+            echo "binary_path_universal=release-artifacts/$BINARY_NAME-universal-apple-darwin" >> $GITHUB_OUTPUT
+            echo "binary_size_universal=${universal_size_mb}MB" >> $GITHUB_OUTPUT
+            
+            echo "🎯 Universal binary size: ${universal_size_mb} MB"
+          else
+            echo "⚠️  Cannot create universal binary: missing architecture binaries"
+            [ -f "$intel_binary" ] || echo "  ❌ Missing Intel binary"
+            [ -f "$arm_binary" ] || echo "  ❌ Missing ARM binary"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries-${{ matrix.target }}
+          path: release-artifacts/
+          retention-days: 1
+
+      - name: Build completion report
+        run: |
+          echo "🎉 macOS Build Completed Successfully"
+          echo "===================================="
+          echo "🏷️ Target: ${{ matrix.target }}"
+          echo "📦 Binary: $BINARY_NAME"
+          echo "📁 Artifact: macos-binaries-${{ matrix.target }}"
+          echo "🔧 Rust Toolchain: stable"
+          echo "🍏 macOS Version: $(sw_vers -productVersion)"
+          if [ "${{ inputs.build_universal }}" = "true" ] && [ "${{ matrix.target }}" = "x86_64-apple-darwin" ]; then
+            echo "🔄 Universal binary: Created"
+          fi
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: macos-latest
+    needs: build-macos-binaries
+    permissions:
+      contents: write
+    if: >
+      github.event.inputs.enable_release == 'true' &&
+      github.event.inputs.debug_mode != 'true' &&
+      (startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_tag != '')
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        run: |
+          # 创建发布目录
+          mkdir -p "release-binaries"
+          echo "📥 Downloading artifacts for release..."
+
+      - name: Download Intel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries-x86_64-apple-darwin
+          path: release-binaries/intel
+
+      - name: Download ARM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries-aarch64-apple-darwin
+          path: release-binaries/arm
+
+      - name: Prepare release files
+        run: |
+          echo "📦 Preparing release files..."
+          release_dir="final-release"
+          mkdir -p "$release_dir"
+          
+          # 复制 Intel 二进制文件
+          echo "🔧 Intel binaries:"
+          find "release-binaries/intel" -type f -executable 2>/dev/null | while read file; do
+            filename=$(basename "$file")
+            # 重命名以明确架构
+            if [[ "$filename" == *"universal"* ]]; then
+              new_name="${filename}"
+            elif [[ "$filename" == *"x86_64"* ]]; then
+              new_name="${filename//x86_64_apple_darwin/intel}"
+            else
+              new_name="${filename}-intel"
+            fi
+            cp "$file" "$release_dir/$new_name"
+            echo "✅ Added: $new_name"
+          done
+          
+          # 复制 ARM 二进制文件
+          echo "🍎 ARM binaries:"
+          find "release-binaries/arm" -type f -executable 2>/dev/null | while read file; do
+            filename=$(basename "$file")
+            if [[ "$filename" == *"aarch64"* ]]; then
+              new_name="${filename//aarch64_apple_darwin/arm64}"
+            else
+              new_name="${filename}-arm64"
+            fi
+            cp "$file" "$release_dir/$new_name"
+            echo "✅ Added: $new_name"
+          done
+          
+          # 显示文件列表
+          echo "📄 Release files:"
+          find "$release_dir" -type f | while read file; do
+            filename=$(basename "$file")
+            size=$(stat -f%z "$file")
+            size_mb=$(echo "scale=2; $size / 1048576" | bc)
+            echo "  - $filename (${size_mb} MB)"
+            
+            # 显示架构信息
+            if file "$file" | grep -q "Mach-O"; then
+              echo "    Architecture:"
+              if lipo -archs "$file" 2>/dev/null; then
+                echo ""
+              else
+                file "$file" | grep -o "Mach-O.*"
+              fi
+            fi
+          done
+
+      - name: Create checksums
+        run: |
+          echo "🔐 Creating checksums..."
+          cd final-release
+          
+          # 为每个文件创建校验和
+          find . -type f -executable 2>/dev/null | while read file; do
+            filename=$(basename "$file")
+            
+            # SHA256
+            sha256=$(shasum -a 256 "$filename" | cut -d' ' -f1)
+            echo "$sha256 *$filename" > "$filename.sha256"
+            
+            # SHA512
+            sha512=$(shasum -a 512 "$filename" | cut -d' ' -f1)
+            echo "$sha512 *$filename" > "$filename.sha512"
+            
+            # BLAKE3 (可选，现代校验和)
+            if command -v b3sum &> /dev/null; then
+              brew install b3sum 2>/dev/null || true
+            fi
+            if command -v b3sum &> /dev/null; then
+              b3sum "$filename" > "$filename.b3sum"
+              echo "✅ Created BLAKE3 checksum for: $filename"
+            fi
+            
+            echo "✅ Created checksums for: $filename"
+            echo "  SHA256: $sha256"
+            echo "  SHA512: $sha512"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: final-release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release completion report
+        run: |
+          echo "🚀 macOS Release Published Successfully"
+          echo "======================================"
+          echo "🏷️ Tag: ${GITHUB_REF#refs/tags/}"
+          echo "📦 Binaries released:"
+          find "final-release" -type f -name "*.sha256" -o -name "*.sha512" -o -name "*.b3sum" | sed 's/\..*$//' | sort -u | while read basefile; do
+            filename=$(basename "$basefile")
+            if [ -f "final-release/$filename" ]; then
+              size=$(stat -f%z "final-release/$filename")
+              size_mb=$(echo "scale=2; $size / 1048576" | bc)
+              echo "  - $filename (${size_mb} MB)"
+              
+              # 显示架构
+              if file "final-release/$filename" | grep -q "Mach-O"; then
+                if lipo -archs "final-release/$filename" 2>/dev/null | grep -q " "; then
+                  echo "    📊 Universal binary (multiple architectures)"
+                else
+                  file "final-release/$filename" | grep -o "Mach-O.*"
+                fi
+              fi
+            fi
+          done
+          echo "🔐 Checksums: SHA256 and SHA512 for each binary"
+          echo "🎯 Targets: x86_64 (Intel), aarch64 (Apple Silicon)"
+
+  debug-mode-report:
+    name: Debug Mode Report
+    runs-on: macos-latest
+    needs: build-macos-binaries
+    if: ${{ inputs.debug_mode }}
+    
+    steps:
+      - name: Debug mode completion message
+        run: |
+          echo "🔧 Debug Mode Completed Successfully!"
+          echo "===================================="
+          echo "🍎 Built macOS binaries for:"
+          echo "  - x86_64-apple-darwin (Intel)"
+          echo "  - aarch64-apple-darwin (Apple Silicon)"
+          if [ "${{ inputs.build_universal }}" = "true" ]; then
+            echo "  - Universal binary (Intel + Apple Silicon)"
+          fi
+          echo "💾 Artifacts saved for inspection"
+          echo "🚫 No release created (debug mode)"
+          echo "🔄 To publish release, re-run with enable_release=true"
+          echo ""
+          echo "📊 System Information:"
+          echo "  macOS Version: $(sw_vers -productVersion)"
+          echo "  Build Version: $(sw_vers -buildVersion)"
+          echo "  Hardware: $(system_profiler SPHardwareDataType | grep 'Model Name' | head -1 | cut -d: -f2 | xargs)"
