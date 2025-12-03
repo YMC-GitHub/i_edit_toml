@@ -31,6 +31,8 @@ on:
 
 env:
   BINARY_NAME: ${{ github.event.repository.name }}
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
 jobs:
   setup-platforms:
@@ -45,6 +47,7 @@ jobs:
       push_ghcr: ${{ steps.parse-registries.outputs.push_ghcr }}
       push_dockerhub: ${{ steps.parse-registries.outputs.push_dockerhub }}
       any_registry: ${{ steps.parse-registries.outputs.any_registry }}
+      has_dockerhub_creds: ${{ steps.check-dockerhub-creds.outputs.has_dockerhub_creds }}
     
     steps:
       - name: Checkout repository
@@ -96,6 +99,17 @@ jobs:
             echo "any_registry=true" >> $GITHUB_OUTPUT
           else
             echo "any_registry=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Check Docker Hub credentials
+        id: check-dockerhub-creds
+        run: |
+          if [[ -n "$DOCKERHUB_USERNAME" ]] && [[ -n "$DOCKERHUB_TOKEN" ]]; then
+            echo "has_dockerhub_creds=true" >> $GITHUB_OUTPUT
+            echo "✅ Docker Hub credentials available"
+          else
+            echo "has_dockerhub_creds=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Docker Hub credentials not configured"
           fi
       
       - name: Get version from tag
@@ -409,12 +423,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Log in to Docker Hub
-        if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && secrets.DOCKERHUB_USERNAME }}
+        if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && needs.setup-platforms.outputs.has_dockerhub_creds == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
       
       - name: Prepare Docker tags
         id: prepare-tags
@@ -429,11 +443,11 @@ jobs:
             fi
           fi
           
-          # Docker Hub tags
-          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
-            TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+          # Docker Hub tags (only if credentials available)
+          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
+            TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
             if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:latest"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ env.BINARY_NAME }}:latest"
             fi
           fi
           
@@ -482,12 +496,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Log in to Docker Hub (release mode)
-        if: ${{ inputs.release && needs.setup-platforms.outputs.push_dockerhub == 'true' && secrets.DOCKERHUB_USERNAME }}
+        if: ${{ inputs.release && needs.setup-platforms.outputs.push_dockerhub == 'true' && needs.setup-platforms.outputs.has_dockerhub_creds == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
       
       - name: Prepare Docker tags
         id: prepare-tags-standalone
@@ -506,15 +520,15 @@ jobs:
             fi
           fi
           
-          # Docker Hub tags
-          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+          # Docker Hub tags (only if credentials available)
+          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
             if [ "${{ inputs.release }}" = "true" ]; then
-              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
               if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-                TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:latest"
+                TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ env.BINARY_NAME }}:latest"
               fi
             else
-              TAGS="$TAGS,${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:standalone-${{ github.sha }}"
+              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ env.BINARY_NAME }}:standalone-${{ github.sha }}"
             fi
           fi
           
@@ -619,8 +633,10 @@ jobs:
               if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
                 echo "  ✅ GHCR: ghcr.io/${{ github.repository }}:${{ needs.setup-platforms.outputs.version }}"
               fi
-              if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
-                echo "  ✅ Docker Hub: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+              if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
+                echo "  ✅ Docker Hub: ${{ env.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}:${{ needs.setup-platforms.outputs.version }}"
+              elsif [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ]; then
+                echo "  ⚠️ Docker Hub: Skipped (credentials not configured)"
               fi
             else
               echo "  Mode: 🔧 Local build (testing)"
@@ -642,13 +658,13 @@ jobs:
             if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
               echo "  🐳 GHCR: https://ghcr.io/${{ github.repository }}"
             fi
-            if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
-              echo "  🐳 Docker Hub: https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}"
+            if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
+              echo "  🐳 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/${{ env.BINARY_NAME }}"
             fi
           fi
           
           echo ""
-          echo "⏱️  Next Steps:"
+          echo "⏱️ Next Steps:"
           if [ "${{ inputs.release }}" = "true" ]; then
             echo "  1. Verify the released binaries on GitHub"
             echo "  2. Test the Docker image from registry"
