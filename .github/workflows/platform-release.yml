@@ -86,12 +86,23 @@ jobs:
           echo "$output"
           echo "$output" | grep -E "^build_this=" | cut -d= -f2 >> $GITHUB_OUTPUT
 
+      - name: Set up Rust toolchain components
+        if: steps.matrix.outputs.build_this == 'true'
+        run: |
+          if [[ "${{ matrix.arch }}" != "x86_64" ]]; then
+            # 获取第一个 target
+            FIRST_TARGET="${{ matrix.targets.split(',')[0] }}"
+            echo "COMPONENTS=rust-std-$FIRST_TARGET" >> $GITHUB_ENV
+          else
+            echo "COMPONENTS=" >> $GITHUB_ENV
+          fi
+
       - name: Install Rust toolchain
         if: steps.matrix.outputs.build_this == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.targets }}
-          ${{ matrix.arch != 'x86_64' && format('components: rust-std-{0}', matrix.targets.split(',')[0]) || '' }}
+          components: ${{ env.COMPONENTS }}
 
       - name: Install cross-compilation tools (Linux -> other arches)
         if: steps.matrix.outputs.build_this == 'true' && runner.os == 'Linux' && matrix.arch != 'x86_64'
