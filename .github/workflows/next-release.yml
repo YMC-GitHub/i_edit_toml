@@ -151,9 +151,9 @@ jobs:
         run: |
           mkdir -p release-binaries
           
-          FIRST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
+          # FIRST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)
+          FIRST_TAG="${{ env.REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
           echo "Using tag for extraction: $FIRST_TAG"
-          
           docker create --name extract-binary-container $FIRST_TAG
           docker cp extract-binary-container:/app/${{ env.BINARY_NAME }} release-binaries/${{ env.BINARY_NAME }}-linux-amd64
           docker rm -f extract-binary-container
