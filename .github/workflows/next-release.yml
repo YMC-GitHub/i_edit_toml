@@ -549,7 +549,7 @@ jobs:
             
             # 2. 使用UPX压缩
             echo "📦 Compressing with UPX..."
-            upx --best --lzma "macos-release/$RELEASE_FILE"
+            upx --best --lzma --force-macos "macos-release/$RELEASE_FILE"
             UPX_SIZE=$(stat -f%z "macos-release/$RELEASE_FILE")
             
             # 计算压缩率
