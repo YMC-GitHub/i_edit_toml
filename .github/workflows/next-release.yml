@@ -365,57 +365,99 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-binary
-          path: release-assets
+          path: release-assets/linux
       
       - name: Download Windows binary
         if: ${{ needs.setup-platforms.outputs.build_windows == 'true' }}
         uses: actions/download-artifact@v4
         with:
           name: windows-binary
-          path: release-assets
+          path: release-assets/windows
       
       - name: Download macOS binaries
         if: ${{ needs.setup-platforms.outputs.build_macos == 'true' }}
         uses: actions/download-artifact@v4
         with:
           pattern: macos-*
-          path: release-assets
+          merge-multiple: true  # 合并多个artifact
+          path: release-assets/macos
       
       - name: Prepare release files
         run: |
           mkdir -p final-release
           
           echo "📦 Collecting release files..."
+          echo "📁 Current directory structure:"
+          find release-assets -type f 2>/dev/null || echo "No files found"
+          ls -la release-assets/
           
-          # Linux 二进制
-          if [ -d "release-assets/linux-binary" ]; then
-            find release-assets/linux-binary -type f ! -name "*.json" | while read file; do
-              filename=$(basename "$file")
+          # 收集所有二进制文件
+          find release-assets -type f ! -name "*.json" 2>/dev/null | while read file; do
+            filename=$(basename "$file")
+            
+            # 跳过可能的空文件或目录
+            if [ -f "$file" ] && [ -s "$file" ]; then
               cp "$file" "final-release/$filename"
-              echo "✅ Added: $filename"
-            done
+              echo "✅ Added: $filename (from: $file)"
+              
+              # 检查文件是否可执行（针对Unix二进制）
+              if [[ "$filename" != *.exe ]]; then
+                chmod +x "final-release/$filename"
+                echo "  Made executable: $filename"
+              fi
+            else
+              echo "⚠️ Skipping empty or invalid file: $file"
+            fi
+          done
+          
+          # 如果final-release为空，尝试直接复制已知路径
+          if [ -z "$(ls -A final-release 2>/dev/null)" ]; then
+            echo "⚠️ No files found via find, trying direct copy..."
+            
+            # Linux
+            if [ -f "release-assets/linux/$BINARY_NAME-linux-amd64" ]; then
+              cp "release-assets/linux/$BINARY_NAME-linux-amd64" "final-release/"
+              chmod +x "final-release/$BINARY_NAME-linux-amd64"
+              echo "✅ Added Linux binary directly"
+            fi
+            
+            # Windows
+            if [ -f "release-assets/windows/$BINARY_NAME-windows-amd64.exe" ]; then
+              cp "release-assets/windows/$BINARY_NAME-windows-amd64.exe" "final-release/"
+              echo "✅ Added Windows binary directly"
+            fi
+            
+            # macOS - 检查特定文件
+            if ls release-assets/macos/* 2>/dev/null; then
+              for file in release-assets/macos/*; do
+                if [ -f "$file" ] && [ -s "$file" ]; then
+                  filename=$(basename "$file")
+                  cp "$file" "final-release/$filename"
+                  chmod +x "final-release/$filename"
+                  echo "✅ Added macOS binary: $filename"
+                fi
+              done
+            fi
           fi
           
-          # Windows 二进制
-          if [ -d "release-assets/windows-binary" ]; then
-            find release-assets/windows-binary -type f ! -name "*.json" | while read file; do
-              filename=$(basename "$file")
-              cp "$file" "final-release/$filename"
-              echo "✅ Added: $filename"
+          echo ""
+          echo "📄 Final release files:"
+          if [ -z "$(ls -A final-release 2>/dev/null)" ]; then
+            echo "❌ ERROR: No files in final-release!"
+            ls -la final-release/ || echo "final-release directory does not exist"
+            # exit 1
+          else
+            ls -lh final-release/
+            echo ""
+            echo "📊 File details:"
+            for file in final-release/*; do
+              if [ -f "$file" ]; then
+                size=$(du -h "$file" | cut -f1)
+                type=$(file -b "$file" 2>/dev/null || echo "Unknown")
+                echo "  - $(basename "$file"): $size ($type)"
+              fi
             done
           fi
-          
-          # macOS 二进制
-          if [ -d "release-assets" ]; then
-            find release-assets -type f -name "macos-*" ! -name "*.json" | while read file; do
-              filename=$(basename "$file")
-              cp "$file" "final-release/$filename"
-              echo "✅ Added: $filename"
-            done
-          fi
-          
-          echo "📄 Release files:"
-          ls -lh final-release/
       
       - name: Create checksums
         run: |
