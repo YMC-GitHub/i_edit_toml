@@ -473,7 +473,7 @@ jobs:
         run: |
           $releaseFile = "$env:BINARY_NAME-windows-amd64.exe"
           Write-Host "🧪 Testing binary..."
-          .\windows-release\$releaseFile --version
+          & .\windows-release\$releaseFile --version
           
           Write-Host "🔍 File info:"
           Get-Item .\windows-release\$releaseFile | Format-List *
