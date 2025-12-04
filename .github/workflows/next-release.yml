@@ -16,22 +16,22 @@ on:
       platforms:
         description: 'Platforms to build (comma separated: linux,windows,macos)'
         required: false
-        default: ${{ env.CONFIG_PLATFORMS || 'linux,windows,macos' }}
+        default: 'linux,windows,macos'  # 直接使用字符串，而不是环境变量
         type: string
       build_docker:
         description: 'Build Docker image'
         required: false
-        default: ${{ env.CONFIG_BUILD_DOCKER == 'true' }}
+        default: true  # 直接使用布尔值
         type: boolean
       docker_registries:
         description: 'Docker registries to push to (comma separated: ghcr.io,docker.io)'
         required: false
-        default: ${{ env.CONFIG_DOCKER_REGISTRIES || 'ghcr.io,docker.io' }}
+        default: 'ghcr.io,docker.io'  # 直接使用字符串
         type: string
       use_china_mirror:
         description: 'Use China mirror for faster downloads'
         required: false
-        default: ${{ env.CONFIG_USE_CHINA_MIRROR == 'true' }}
+        default: false  # 直接使用布尔值，不是表达式
         type: boolean
       optimize_binary:
         description: 'Optimize binaries with strip/UPX (reduce file size)'
@@ -43,7 +43,6 @@ on:
         required: false
         default: '9'
         type: string
-
 env:
   BINARY_NAME: ${{ github.event.repository.name }}
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -89,6 +88,7 @@ jobs:
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "🚀 Tag push detected: ${{ github.ref_name }}"
           else
+            # 手动触发时，使用输入参数的值
             echo "should_release=${{ inputs.release }}" >> $GITHUB_OUTPUT
             echo "🔧 Manual workflow dispatch"
           fi
