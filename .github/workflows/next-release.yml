@@ -216,6 +216,20 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Debug all outputs
+        run: |
+            echo "=== DEBUG OUTPUTS ==="
+            echo "build_linux: ${{ steps.parse-platforms.outputs.build_linux }}"
+            echo "build_windows: ${{ steps.parse-platforms.outputs.build_windows }}"
+            echo "build_macos: ${{ steps.parse-platforms.outputs.build_macos }}"
+            echo "has_binaries: ${{ steps.parse-platforms.outputs.has_binaries }}"
+            echo "build_docker config: ${{ steps.get-config.outputs.build_docker }}"
+            echo "any_registry: ${{ steps.parse-registries.outputs.any_registry }}"
+            echo "push_ghcr: ${{ steps.parse-registries.outputs.push_ghcr }}"
+            echo "push_dockerhub: ${{ steps.parse-registries.outputs.push_dockerhub }}"
+            echo "has_dockerhub_creds: ${{ steps.check-dockerhub-creds.outputs.has_dockerhub_creds }}"
+            echo "should_release: ${{ steps.check-trigger.outputs.should_release }}"
+            
   build-linux:
     name: Build Linux Binary
     runs-on: ubuntu-latest
