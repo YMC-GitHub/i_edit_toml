@@ -647,7 +647,7 @@ jobs:
               fi
               if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
                 echo "  ✅ Docker Hub: ${{ env.DOCKERHUB_USERNAME }}/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
-              elsif [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ]; then
+              elif [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ]; then
                 echo "  ⚠️ Docker Hub: Skipped (credentials not configured)"
               fi
             else
