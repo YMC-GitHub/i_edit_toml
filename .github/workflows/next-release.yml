@@ -405,16 +405,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-docker-with-release:
-    name: Build Docker Image (with Release)
+  build-docker:
+    name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: 
-      - setup-platforms
-      - create-release
+    needs: setup-platforms
     if: >
-      ${{ inputs.build_docker && inputs.release &&
-          needs.setup-platforms.outputs.has_binaries == 'true' &&
-          needs.setup-platforms.outputs.any_registry == 'true' }}
+      ${{ inputs.build_docker && needs.setup-platforms.outputs.any_registry == 'true' }}
     permissions:
       contents: read
       packages: write
@@ -427,7 +423,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Log in to GHCR
-        if: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' }}
+        if: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' && inputs.release }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -435,7 +431,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Log in to Docker Hub
-        if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && needs.setup-platforms.outputs.has_dockerhub_creds == 'true' }}
+        if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && 
+                needs.setup-platforms.outputs.has_dockerhub_creds == 'true' && 
+                inputs.release }}
         uses: docker/login-action@v3
         with:
           registry: docker.io
@@ -444,79 +442,6 @@ jobs:
       
       - name: Prepare Docker tags
         id: prepare-tags
-        run: |
-          TAGS=""
-          
-          # GHCR tags - 使用全小写的仓库名称
-          if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
-            TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
-            if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-              TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:latest"
-            fi
-          fi
-          
-          # Docker Hub tags (only if credentials available)
-          if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
-            TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
-            if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
-              TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:latest"
-            fi
-          fi
-          
-          # 移除开头的逗号
-          TAGS="${TAGS#,}"
-          echo "tags=$TAGS" >> $GITHUB_OUTPUT
-          echo "📦 Docker tags: $TAGS"
-      
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.prepare-tags.outputs.tags }}
-          build-args: |
-            USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  build-docker-standalone:
-    name: Build Docker Image (Standalone)
-    runs-on: ubuntu-latest
-    needs: setup-platforms
-    if: >
-      ${{ inputs.build_docker && 
-          needs.setup-platforms.outputs.has_binaries == 'false' &&
-          needs.setup-platforms.outputs.any_registry == 'true' }}
-    permissions:
-      contents: read
-      packages: write
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Log in to GHCR (release mode)
-        if: ${{ inputs.release && needs.setup-platforms.outputs.push_ghcr == 'true' }}
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Log in to Docker Hub (release mode)
-        if: ${{ inputs.release && needs.setup-platforms.outputs.push_dockerhub == 'true' && needs.setup-platforms.outputs.has_dockerhub_creds == 'true' }}
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-      
-      - name: Prepare Docker tags
-        id: prepare-tags-standalone
         run: |
           TAGS=""
           
@@ -555,7 +480,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: ${{ inputs.release }}
-          tags: ${{ steps.prepare-tags-standalone.outputs.tags }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
           build-args: |
             USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
           cache-from: type=gha
@@ -596,8 +521,7 @@ jobs:
       - build-windows
       - build-macos
       - create-release
-      - build-docker-with-release
-      - build-docker-standalone
+      - build-docker
     if: always()
     
     steps:
