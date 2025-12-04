@@ -10,9 +10,9 @@
 ./scripts/docker-build.sh
 
 # 2. 自定义镜像名
-./scripts/docker-build.sh --name=zero/toml_path --target=prod
+./scripts/docker-build.sh --name=zero/i_edit_toml --target=prod
 
-./scripts/docker-build.sh --name=zero/toml_path --target=prod --china=true --rust-mirror=ustc --alpine-mirror=mirrors.aliyun.com
+./scripts/docker-build.sh --name=zero/i_edit_toml --target=prod --china=true --rust-mirror=ustc --alpine-mirror=mirrors.aliyun.com
 
 ./scripts/docker-build.sh --push --china=false
 ```
