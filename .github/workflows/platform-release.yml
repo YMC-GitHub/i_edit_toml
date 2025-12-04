@@ -1,434 +1,434 @@
-name: Platform Build and Release
+# name: Platform Build and Release
 
-on:
-#   push:
-#     tags:
-#       - 'v*'  # 推送 v 开头的标签时触发
-  workflow_dispatch:  # 允许手动触发
-    inputs:
-      debug_mode:
-        description: 'Dry run mode (build but skip release)'
-        required: false
-        default: false
-        type: boolean
-      dry_run:
-        description: 'Simulate build without actual compilation'
-        required: false
-        default: false
-        type: boolean
-      platforms:
-        description: 'Platforms: windows,linux,macos or all'
-        required: false
-        default: 'windows,linux,macos'
-        type: string
-      architectures:
-        description: 'Architectures: x86_64,aarch64,armv7 or all'
-        required: false
-        default: 'x86_64'
-        type: string
+# on:
+# #   push:
+# #     tags:
+# #       - 'v*'  # 推送 v 开头的标签时触发
+#   workflow_dispatch:  # 允许手动触发
+#     inputs:
+#       debug_mode:
+#         description: 'Dry run mode (build but skip release)'
+#         required: false
+#         default: false
+#         type: boolean
+#       dry_run:
+#         description: 'Simulate build without actual compilation'
+#         required: false
+#         default: false
+#         type: boolean
+#       platforms:
+#         description: 'Platforms: windows,linux,macos or all'
+#         required: false
+#         default: 'windows,linux,macos'
+#         type: string
+#       architectures:
+#         description: 'Architectures: x86_64,aarch64,armv7 or all'
+#         required: false
+#         default: 'x86_64'
+#         type: string
 
-env:
-  BINARY_NAME: ${{ github.event.repository.name }}
+# env:
+#   BINARY_NAME: ${{ github.event.repository.name }}
 
-jobs:
-  # 简化的矩阵构建
-  build:
-    name: Build for ${{ matrix.platform }}-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          # 默认配置 - 根据输入动态过滤
-          - id: windows-x64
-            platform: windows
-            arch: x86_64
-            runner: windows-latest
-            targets: ['x86_64-pc-windows-msvc', 'x86_64-pc-windows-gnu']
-            ext: '.exe'
-            build_if: ${{ 
-              (contains(github.event.inputs.platforms, 'windows') || 
-               github.event.inputs.platforms == 'all' ||
-               github.event.inputs.platforms == null) &&
-              (contains(github.event.inputs.architectures, 'x86_64') ||
-               github.event.inputs.architectures == 'all' ||
-               github.event.inputs.architectures == null)
-            }}
+# jobs:
+#   # 简化的矩阵构建
+#   build:
+#     name: Build for ${{ matrix.platform }}-${{ matrix.arch }}
+#     runs-on: ${{ matrix.runner }}
+#     strategy:
+#       matrix:
+#         include:
+#           # 默认配置 - 根据输入动态过滤
+#           - id: windows-x64
+#             platform: windows
+#             arch: x86_64
+#             runner: windows-latest
+#             targets: ['x86_64-pc-windows-msvc', 'x86_64-pc-windows-gnu']
+#             ext: '.exe'
+#             build_if: ${{ 
+#               (contains(github.event.inputs.platforms, 'windows') || 
+#                github.event.inputs.platforms == 'all' ||
+#                github.event.inputs.platforms == null) &&
+#               (contains(github.event.inputs.architectures, 'x86_64') ||
+#                github.event.inputs.architectures == 'all' ||
+#                github.event.inputs.architectures == null)
+#             }}
           
-          - id: linux-x64
-            platform: linux
-            arch: x86_64
-            runner: ubuntu-latest
-            targets: ['x86_64-unknown-linux-gnu', 'x86_64-unknown-linux-musl']
-            ext: ''
-            build_if: ${{ 
-              (contains(github.event.inputs.platforms, 'linux') ||
-               github.event.inputs.platforms == 'all' ||
-               github.event.inputs.platforms == null) &&
-              (contains(github.event.inputs.architectures, 'x86_64') ||
-               github.event.inputs.architectures == 'all' ||
-               github.event.inputs.architectures == null)
-            }}
+#           - id: linux-x64
+#             platform: linux
+#             arch: x86_64
+#             runner: ubuntu-latest
+#             targets: ['x86_64-unknown-linux-gnu', 'x86_64-unknown-linux-musl']
+#             ext: ''
+#             build_if: ${{ 
+#               (contains(github.event.inputs.platforms, 'linux') ||
+#                github.event.inputs.platforms == 'all' ||
+#                github.event.inputs.platforms == null) &&
+#               (contains(github.event.inputs.architectures, 'x86_64') ||
+#                github.event.inputs.architectures == 'all' ||
+#                github.event.inputs.architectures == null)
+#             }}
           
-          - id: linux-arm64
-            platform: linux
-            arch: aarch64
-            runner: ubuntu-latest
-            targets: ['aarch64-unknown-linux-gnu']
-            ext: ''
-            build_if: ${{ 
-              (contains(github.event.inputs.platforms, 'linux') ||
-               github.event.inputs.platforms == 'all' ||
-               github.event.inputs.platforms == null) &&
-              (contains(github.event.inputs.architectures, 'aarch64') ||
-               github.event.inputs.architectures == 'all')
-            }}
+#           - id: linux-arm64
+#             platform: linux
+#             arch: aarch64
+#             runner: ubuntu-latest
+#             targets: ['aarch64-unknown-linux-gnu']
+#             ext: ''
+#             build_if: ${{ 
+#               (contains(github.event.inputs.platforms, 'linux') ||
+#                github.event.inputs.platforms == 'all' ||
+#                github.event.inputs.platforms == null) &&
+#               (contains(github.event.inputs.architectures, 'aarch64') ||
+#                github.event.inputs.architectures == 'all')
+#             }}
           
-          - id: linux-armv7
-            platform: linux
-            arch: armv7
-            runner: ubuntu-latest
-            targets: ['armv7-unknown-linux-gnueabihf']
-            ext: ''
-            build_if: ${{ 
-              (contains(github.event.inputs.platforms, 'linux') ||
-               github.event.inputs.platforms == 'all' ||
-               github.event.inputs.platforms == null) &&
-              (contains(github.event.inputs.architectures, 'armv7') ||
-               github.event.inputs.architectures == 'all')
-            }}
+#           - id: linux-armv7
+#             platform: linux
+#             arch: armv7
+#             runner: ubuntu-latest
+#             targets: ['armv7-unknown-linux-gnueabihf']
+#             ext: ''
+#             build_if: ${{ 
+#               (contains(github.event.inputs.platforms, 'linux') ||
+#                github.event.inputs.platforms == 'all' ||
+#                github.event.inputs.platforms == null) &&
+#               (contains(github.event.inputs.architectures, 'armv7') ||
+#                github.event.inputs.architectures == 'all')
+#             }}
           
-          - id: macos-x64
-            platform: macos
-            arch: x86_64
-            runner: macos-latest
-            targets: ['x86_64-apple-darwin']
-            ext: ''
-            build_if: ${{ 
-              (contains(github.event.inputs.platforms, 'macos') ||
-               github.event.inputs.platforms == 'all' ||
-               github.event.inputs.platforms == null) &&
-              (contains(github.event.inputs.architectures, 'x86_64') ||
-               github.event.inputs.architectures == 'all' ||
-               github.event.inputs.architectures == null)
-            }}
+#           - id: macos-x64
+#             platform: macos
+#             arch: x86_64
+#             runner: macos-latest
+#             targets: ['x86_64-apple-darwin']
+#             ext: ''
+#             build_if: ${{ 
+#               (contains(github.event.inputs.platforms, 'macos') ||
+#                github.event.inputs.platforms == 'all' ||
+#                github.event.inputs.platforms == null) &&
+#               (contains(github.event.inputs.architectures, 'x86_64') ||
+#                github.event.inputs.architectures == 'all' ||
+#                github.event.inputs.architectures == null)
+#             }}
     
-    # 根据条件跳过作业
-    if: ${{ matrix.build_if }}
+#     # 根据条件跳过作业
+#     if: ${{ matrix.build_if }}
     
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Setup Build Info
-        id: setup
-        run: |
-          echo "🚀 Starting build for ${{ matrix.platform }}-${{ matrix.arch }}"
-          echo "Dry run: ${{ github.event.inputs.dry_run }}"
-          echo "Debug mode: ${{ github.event.inputs.debug_mode }}"
-          echo "Targets: ${{ join(matrix.targets, ', ') }}"
+#       - name: Setup Build Info
+#         id: setup
+#         run: |
+#           echo "🚀 Starting build for ${{ matrix.platform }}-${{ matrix.arch }}"
+#           echo "Dry run: ${{ github.event.inputs.dry_run }}"
+#           echo "Debug mode: ${{ github.event.inputs.debug_mode }}"
+#           echo "Targets: ${{ join(matrix.targets, ', ') }}"
           
-          # 标记是否为模拟构建
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            echo "DRY_RUN=true" >> $GITHUB_ENV
-          else
-            echo "DRY_RUN=false" >> $GITHUB_ENV
-          fi
+#           # 标记是否为模拟构建
+#           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+#             echo "DRY_RUN=true" >> $GITHUB_ENV
+#           else
+#             echo "DRY_RUN=false" >> $GITHUB_ENV
+#           fi
 
-      - name: Setup Rust (Dry Run)
-        if: env.DRY_RUN == 'true'
-        run: |
-          echo "🔧 [DRY RUN] Would install Rust toolchain"
-          echo "Targets: ${{ join(matrix.targets, ', ') }}"
+#       - name: Setup Rust (Dry Run)
+#         if: env.DRY_RUN == 'true'
+#         run: |
+#           echo "🔧 [DRY RUN] Would install Rust toolchain"
+#           echo "Targets: ${{ join(matrix.targets, ', ') }}"
 
-      - name: Setup Rust (Real)
-        if: env.DRY_RUN != 'true'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: ${{ join(matrix.targets, ',') }}
+#       - name: Setup Rust (Real)
+#         if: env.DRY_RUN != 'true'
+#         uses: dtolnay/rust-toolchain@stable
+#         with:
+#           toolchain: stable
+#           targets: ${{ join(matrix.targets, ',') }}
 
-      - name: Setup Cross Compilation (Linux ARM)
-        if: |
-          env.DRY_RUN != 'true' &&
-          runner.os == 'Linux' &&
-          (matrix.arch == 'aarch64' || matrix.arch == 'armv7')
-        run: |
-          echo "🔧 Setting up cross compilation for ${{ matrix.arch }}"
-          sudo apt-get update
+#       - name: Setup Cross Compilation (Linux ARM)
+#         if: |
+#           env.DRY_RUN != 'true' &&
+#           runner.os == 'Linux' &&
+#           (matrix.arch == 'aarch64' || matrix.arch == 'armv7')
+#         run: |
+#           echo "🔧 Setting up cross compilation for ${{ matrix.arch }}"
+#           sudo apt-get update
           
-          if [[ "${{ matrix.arch }}" == "aarch64" ]]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          elif [[ "${{ matrix.arch }}" == "armv7" ]]; then
-            sudo apt-get install -y gcc-arm-linux-gnueabihf
-          fi
+#           if [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+#             sudo apt-get install -y gcc-aarch64-linux-gnu
+#           elif [[ "${{ matrix.arch }}" == "armv7" ]]; then
+#             sudo apt-get install -y gcc-arm-linux-gnueabihf
+#           fi
 
-      - name: Build (Dry Run)
-        if: env.DRY_RUN == 'true'
-        run: |
-          echo "🏗️ [DRY RUN] Would build for targets:"
-          for target in ${{ join(matrix.targets, ' ') }}; do
-            echo "  - $target"
-          done
+#       - name: Build (Dry Run)
+#         if: env.DRY_RUN == 'true'
+#         run: |
+#           echo "🏗️ [DRY RUN] Would build for targets:"
+#           for target in ${{ join(matrix.targets, ' ') }}; do
+#             echo "  - $target"
+#           done
           
-          # 模拟构建输出
-          mkdir -p artifacts
-          echo "dry-run-build-${{ matrix.platform }}-${{ matrix.arch }}" > artifacts/dry-run.txt
+#           # 模拟构建输出
+#           mkdir -p artifacts
+#           echo "dry-run-build-${{ matrix.platform }}-${{ matrix.arch }}" > artifacts/dry-run.txt
           
-          echo "✅ Dry run completed successfully"
+#           echo "✅ Dry run completed successfully"
 
-      - name: Build (Real)
-        if: env.DRY_RUN != 'true'
-        run: |
-          echo "🏗️ Building for ${{ matrix.platform }}-${{ matrix.arch }}"
+#       - name: Build (Real)
+#         if: env.DRY_RUN != 'true'
+#         run: |
+#           echo "🏗️ Building for ${{ matrix.platform }}-${{ matrix.arch }}"
           
-          for target in ${{ join(matrix.targets, ' ') }}; do
-            echo "🔧 Building for: $target"
+#           for target in ${{ join(matrix.targets, ' ') }}; do
+#             echo "🔧 Building for: $target"
             
-            # 设置交叉编译环境
-            case "$target" in
-              aarch64-unknown-linux-gnu)
-                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-                ;;
-              armv7-unknown-linux-gnueabihf)
-                export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-                ;;
-            esac
+#             # 设置交叉编译环境
+#             case "$target" in
+#               aarch64-unknown-linux-gnu)
+#                 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+#                 ;;
+#               armv7-unknown-linux-gnueabihf)
+#                 export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+#                 ;;
+#             esac
             
-            cargo build --release --target "$target"
+#             cargo build --release --target "$target"
             
-            # 验证构建
-            if [[ "${{ runner.os }}" == "Windows" ]]; then
-              if [ -f "target/$target/release/${{ env.BINARY_NAME }}.exe" ]; then
-                echo "✅ Built: target/$target/release/${{ env.BINARY_NAME }}.exe"
-              fi
-            else
-              if [ -f "target/$target/release/${{ env.BINARY_NAME }}" ]; then
-                echo "✅ Built: target/$target/release/${{ env.BINARY_NAME }}"
-              fi
-            fi
-          done
+#             # 验证构建
+#             if [[ "${{ runner.os }}" == "Windows" ]]; then
+#               if [ -f "target/$target/release/${{ env.BINARY_NAME }}.exe" ]; then
+#                 echo "✅ Built: target/$target/release/${{ env.BINARY_NAME }}.exe"
+#               fi
+#             else
+#               if [ -f "target/$target/release/${{ env.BINARY_NAME }}" ]; then
+#                 echo "✅ Built: target/$target/release/${{ env.BINARY_NAME }}"
+#               fi
+#             fi
+#           done
 
-      - name: Package Artifacts
-        run: |
-          echo "📦 Packaging artifacts..."
-          ARTIFACT_DIR="artifacts-${{ matrix.platform }}-${{ matrix.arch }}"
-          mkdir -p "$ARTIFACT_DIR"
+#       - name: Package Artifacts
+#         run: |
+#           echo "📦 Packaging artifacts..."
+#           ARTIFACT_DIR="artifacts-${{ matrix.platform }}-${{ matrix.arch }}"
+#           mkdir -p "$ARTIFACT_DIR"
           
-          if [[ "${{ env.DRY_RUN }}" == "true" ]]; then
-            # 模拟打包
-            echo "simulated-binary" > "$ARTIFACT_DIR/${{ env.BINARY_NAME }}-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
-            echo "✅ [DRY RUN] Created simulated artifacts"
-          else
-            # 实际打包
-            for target in ${{ join(matrix.targets, ' ') }}; do
-              if [[ "${{ runner.os }}" == "Windows" ]]; then
-                SRC="target/$target/release/${{ env.BINARY_NAME }}.exe"
-                if [ -f "$SRC" ]; then
-                  # Windows 文件名处理
-                  if [[ "$target" == *-msvc ]]; then
-                    DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-windows-x64-msvc.exe"
-                  else
-                    DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-windows-x64-gnu.exe"
-                  fi
-                  cp "$SRC" "$DEST"
-                  echo "📦 Packaged: $DEST"
-                fi
-              else
-                SRC="target/$target/release/${{ env.BINARY_NAME }}"
-                if [ -f "$SRC" ]; then
-                  # Linux/macOS 文件名处理
-                  if [[ "${{ matrix.platform }}" == "linux" ]]; then
-                    if [[ "${{ matrix.arch }}" == "x86_64" ]]; then
-                      if [[ "$target" == *-musl ]]; then
-                        DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-x64-musl"
-                      else
-                        DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-x64-gnu"
-                      fi
-                    elif [[ "${{ matrix.arch }}" == "aarch64" ]]; then
-                      DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-arm64"
-                    else
-                      DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-armv7"
-                    fi
-                  else
-                    # macOS
-                    DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-macos-x64"
-                  fi
-                  cp "$SRC" "$DEST"
-                  echo "📦 Packaged: $DEST"
-                fi
-              fi
-            done
-          fi
+#           if [[ "${{ env.DRY_RUN }}" == "true" ]]; then
+#             # 模拟打包
+#             echo "simulated-binary" > "$ARTIFACT_DIR/${{ env.BINARY_NAME }}-${{ matrix.platform }}-${{ matrix.arch }}${{ matrix.ext }}"
+#             echo "✅ [DRY RUN] Created simulated artifacts"
+#           else
+#             # 实际打包
+#             for target in ${{ join(matrix.targets, ' ') }}; do
+#               if [[ "${{ runner.os }}" == "Windows" ]]; then
+#                 SRC="target/$target/release/${{ env.BINARY_NAME }}.exe"
+#                 if [ -f "$SRC" ]; then
+#                   # Windows 文件名处理
+#                   if [[ "$target" == *-msvc ]]; then
+#                     DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-windows-x64-msvc.exe"
+#                   else
+#                     DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-windows-x64-gnu.exe"
+#                   fi
+#                   cp "$SRC" "$DEST"
+#                   echo "📦 Packaged: $DEST"
+#                 fi
+#               else
+#                 SRC="target/$target/release/${{ env.BINARY_NAME }}"
+#                 if [ -f "$SRC" ]; then
+#                   # Linux/macOS 文件名处理
+#                   if [[ "${{ matrix.platform }}" == "linux" ]]; then
+#                     if [[ "${{ matrix.arch }}" == "x86_64" ]]; then
+#                       if [[ "$target" == *-musl ]]; then
+#                         DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-x64-musl"
+#                       else
+#                         DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-x64-gnu"
+#                       fi
+#                     elif [[ "${{ matrix.arch }}" == "aarch64" ]]; then
+#                       DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-arm64"
+#                     else
+#                       DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-linux-armv7"
+#                     fi
+#                   else
+#                     # macOS
+#                     DEST="$ARTIFACT_DIR/${{ env.BINARY_NAME }}-macos-x64"
+#                   fi
+#                   cp "$SRC" "$DEST"
+#                   echo "📦 Packaged: $DEST"
+#                 fi
+#               fi
+#             done
+#           fi
           
-          echo "artifact_dir=$ARTIFACT_DIR" >> $GITHUB_ENV
+#           echo "artifact_dir=$ARTIFACT_DIR" >> $GITHUB_ENV
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }}-${{ matrix.arch }}-binaries
-          path: ${{ env.artifact_dir }}/
-          retention-days: 7
+#       - name: Upload Artifacts
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: ${{ matrix.platform }}-${{ matrix.arch }}-binaries
+#           path: ${{ env.artifact_dir }}/
+#           retention-days: 7
 
-  # 发布作业（支持dry_run）
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      contents: write
-    # 条件：是标签推送 且 不是debug/dry_run模式
-    if: |
-      startsWith(github.ref, 'refs/tags/') &&
-      github.event.inputs.debug_mode != 'true' &&
-      github.event.inputs.dry_run != 'true'
+#   # 发布作业（支持dry_run）
+#   create-release:
+#     name: Create Release
+#     runs-on: ubuntu-latest
+#     needs: build
+#     permissions:
+#       contents: write
+#     # 条件：是标签推送 且 不是debug/dry_run模式
+#     if: |
+#       startsWith(github.ref, 'refs/tags/') &&
+#       github.event.inputs.debug_mode != 'true' &&
+#       github.event.inputs.dry_run != 'true'
     
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all-artifacts
+#       - name: Download Artifacts
+#         uses: actions/download-artifact@v4
+#         with:
+#           path: all-artifacts
 
-      - name: Prepare Release
-        run: |
-          echo "🎁 Preparing release..."
+#       - name: Prepare Release
+#         run: |
+#           echo "🎁 Preparing release..."
           
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            echo "📝 [DRY RUN] Would prepare release files"
-            mkdir -p release-files
-            echo "dry-run-release" > release-files/README.md
-          else
-            mkdir -p release-files
+#           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+#             echo "📝 [DRY RUN] Would prepare release files"
+#             mkdir -p release-files
+#             echo "dry-run-release" > release-files/README.md
+#           else
+#             mkdir -p release-files
             
-            # 收集所有二进制文件
-            find all-artifacts -type f ! -name "*.txt" | while read file; do
-              if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                cp "$file" "release-files/$filename"
-                echo "📦 Added: $filename"
-              fi
-            done
+#             # 收集所有二进制文件
+#             find all-artifacts -type f ! -name "*.txt" | while read file; do
+#               if [ -f "$file" ]; then
+#                 filename=$(basename "$file")
+#                 cp "$file" "release-files/$filename"
+#                 echo "📦 Added: $filename"
+#               fi
+#             done
             
-            # 创建校验和
-            cd release-files
-            for file in *; do
-              if [ -f "$file" ]; then
-                sha256sum "$file" > "$file.sha256"
-              fi
-            done
-            sha256sum * | grep -v '\.sha256$' > SHA256SUMS
-          fi
+#             # 创建校验和
+#             cd release-files
+#             for file in *; do
+#               if [ -f "$file" ]; then
+#                 sha256sum "$file" > "$file.sha256"
+#               fi
+#             done
+#             sha256sum * | grep -v '\.sha256$' > SHA256SUMS
+#           fi
           
-          echo "📊 Files ready for release:"
-          ls -la release-files/ 2>/dev/null || echo "No files prepared"
+#           echo "📊 Files ready for release:"
+#           ls -la release-files/ 2>/dev/null || echo "No files prepared"
 
-      - name: Generate Release Notes
-        run: |
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
+#       - name: Generate Release Notes
+#         run: |
+#           TAG_NAME="${GITHUB_REF#refs/tags/}"
           
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            echo "📝 [DRY RUN] Would generate release notes for $TAG_NAME"
-            echo "# Dry Run Release" > release-notes.md
-          else
-            cat > release-notes.md << EOF
-          # Release $TAG_NAME
+#           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+#             echo "📝 [DRY RUN] Would generate release notes for $TAG_NAME"
+#             echo "# Dry Run Release" > release-notes.md
+#           else
+#             cat > release-notes.md << EOF
+#           # Release $TAG_NAME
           
-          ## Binaries
+#           ## Binaries
           
-          EOF
+#           EOF
             
-            if [ -d "release-files" ]; then
-              cd release-files
-              for file in *; do
-                if [[ "$file" != *.sha256 ]] && [[ "$file" != SHA256SUMS ]]; then
-                  size=$(stat -c%s "$file" 2>/dev/null || echo "0")
-                  size_mb=$(echo "scale=2; $size / 1048576" | bc 2>/dev/null || echo "0")
-                  echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
-                fi
-              done
-            fi
+#             if [ -d "release-files" ]; then
+#               cd release-files
+#               for file in *; do
+#                 if [[ "$file" != *.sha256 ]] && [[ "$file" != SHA256SUMS ]]; then
+#                   size=$(stat -c%s "$file" 2>/dev/null || echo "0")
+#                   size_mb=$(echo "scale=2; $size / 1048576" | bc 2>/dev/null || echo "0")
+#                   echo "- \`$file\` (${size_mb} MB)" >> ../release-notes.md
+#                 fi
+#               done
+#             fi
             
-            cat >> release-notes.md << EOF
+#             cat >> release-notes.md << EOF
           
-          ## Verification
+#           ## Verification
           
-          \`\`\`bash
-          sha256sum -c SHA256SUMS
-          \`\`\`
-          EOF
-          fi
+#           \`\`\`bash
+#           sha256sum -c SHA256SUMS
+#           \`\`\`
+#           EOF
+#           fi
 
-      - name: Create Release (Dry Run)
-        if: github.event.inputs.dry_run == 'true'
-        run: |
-          echo "🚀 [DRY RUN] Would create GitHub release"
-          echo "Tag: ${GITHUB_REF#refs/tags/}"
-          echo "Files would be uploaded"
-          echo "Release notes would be used"
+#       - name: Create Release (Dry Run)
+#         if: github.event.inputs.dry_run == 'true'
+#         run: |
+#           echo "🚀 [DRY RUN] Would create GitHub release"
+#           echo "Tag: ${GITHUB_REF#refs/tags/}"
+#           echo "Files would be uploaded"
+#           echo "Release notes would be used"
 
-      - name: Create Release (Real)
-        if: github.event.inputs.dry_run != 'true'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: release-files/*
-          body_path: release-notes.md
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#       - name: Create Release (Real)
+#         if: github.event.inputs.dry_run != 'true'
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           files: release-files/*
+#           body_path: release-notes.md
+#           draft: false
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 简化的状态汇总
-  summary:
-    name: Summary
-    runs-on: ubuntu-latest
-    needs: [build, create-release]
-    if: always()
+#   # 简化的状态汇总
+#   summary:
+#     name: Summary
+#     runs-on: ubuntu-latest
+#     needs: [build, create-release]
+#     if: always()
     
-    steps:
-      - name: Generate Build Report
-        run: |
-          echo "# Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+#     steps:
+#       - name: Generate Build Report
+#         run: |
+#           echo "# Build Summary" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
           
-          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- Platforms: \`${{ github.event.inputs.platforms || 'windows,linux,macos' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Architectures: \`${{ github.event.inputs.architectures || 'x86_64' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Dry Run: \`${{ github.event.inputs.dry_run || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Debug Mode: \`${{ github.event.inputs.debug_mode || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+#           echo "- Platforms: \`${{ github.event.inputs.platforms || 'windows,linux,macos' }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- Architectures: \`${{ github.event.inputs.architectures || 'x86_64' }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- Dry Run: \`${{ github.event.inputs.dry_run || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "- Debug Mode: \`${{ github.event.inputs.debug_mode || 'false' }}\`" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
           
-          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+#           echo "## Build Results" >> $GITHUB_STEP_SUMMARY
           
-          # 统计成功/失败/跳过的构建
-          SUCCESS_COUNT=0
-          FAILED_COUNT=0
-          SKIPPED_COUNT=0
+#           # 统计成功/失败/跳过的构建
+#           SUCCESS_COUNT=0
+#           FAILED_COUNT=0
+#           SKIPPED_COUNT=0
           
-          # 这里简化显示，实际应该解析每个矩阵作业的结果
-          echo "Matrix builds completed based on configuration." >> $GITHUB_STEP_SUMMARY
+#           # 这里简化显示，实际应该解析每个矩阵作业的结果
+#           echo "Matrix builds completed based on configuration." >> $GITHUB_STEP_SUMMARY
           
-          if [[ "${{ needs.build.result }}" == "success" ]]; then
-            echo "✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.build.result }}" == "failure" ]]; then
-            echo "❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
-          fi
+#           if [[ "${{ needs.build.result }}" == "success" ]]; then
+#             echo "✅ All builds completed successfully" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ needs.build.result }}" == "failure" ]]; then
+#             echo "❌ Some builds failed" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
           
-          echo "## Release Status" >> $GITHUB_STEP_SUMMARY
-          if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
-            echo "🟡 Dry Run Mode - No release created" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ github.event.inputs.debug_mode }}" == "true" ]]; then
-            echo "🟡 Debug Mode - No release created" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.create-release.result }}" == "success" ]]; then
-            echo "✅ Release created successfully!" >> $GITHUB_STEP_SUMMARY
-          elif [[ "${{ needs.create-release.result }}" == "skipped" ]]; then
-            echo "⏭️ Release skipped (not a tag or conditions not met)" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ Release failed" >> $GITHUB_STEP_SUMMARY
-          fi
+#           echo "## Release Status" >> $GITHUB_STEP_SUMMARY
+#           if [[ "${{ github.event.inputs.dry_run }}" == "true" ]]; then
+#             echo "🟡 Dry Run Mode - No release created" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ github.event.inputs.debug_mode }}" == "true" ]]; then
+#             echo "🟡 Debug Mode - No release created" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ needs.create-release.result }}" == "success" ]]; then
+#             echo "✅ Release created successfully!" >> $GITHUB_STEP_SUMMARY
+#           elif [[ "${{ needs.create-release.result }}" == "skipped" ]]; then
+#             echo "⏭️ Release skipped (not a tag or conditions not met)" >> $GITHUB_STEP_SUMMARY
+#           else
+#             echo "❌ Release failed" >> $GITHUB_STEP_SUMMARY
+#           fi
           
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*Run ID: ${{ github.run_id }}*" >> $GITHUB_STEP_SUMMARY
+#           echo "" >> $GITHUB_STEP_SUMMARY
+#           echo "---" >> $GITHUB_STEP_SUMMARY
+#           echo "*Run ID: ${{ github.run_id }}*" >> $GITHUB_STEP_SUMMARY
