@@ -368,11 +368,21 @@ jobs:
           target: x86_64-pc-windows-msvc
       
       - name: Build
+        shell: pwsh
         run: |
           cargo build --release --target x86_64-pc-windows-msvc
           
-          echo "📊 Original binary size:"
-          ls -lh "target/x86_64-pc-windows-msvc/release/$env:BINARY_NAME.exe"
+          Write-Host "📊 Original binary size:"
+          $exePath = "target\x86_64-pc-windows-msvc\release\$env:BINARY_NAME.exe"
+          if (Test-Path $exePath) {
+            $file = Get-Item $exePath
+            Write-Host "  File: $($file.Name)"
+            Write-Host "  Size: $([math]::Round($file.Length/1MB, 2)) MB"
+            Write-Host "  Path: $exePath"
+          } else {
+            Write-Host "  ❌ File not found: $exePath"
+          }
+      
       
       - name: Install UPX for Windows
         if: ${{ needs.setup-platforms.outputs.optimize_binary == 'true' }}
