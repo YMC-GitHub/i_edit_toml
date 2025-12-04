@@ -1,4 +1,4 @@
-name: Publish to crates.io S
+name: Build and Publish (crates.io) S
 
 on:
   push:

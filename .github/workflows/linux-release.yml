@@ -1,6 +1,9 @@
 name: Build Linux Binaries and Release
 
 on:
+  # push:
+  #   tags:
+  #     - 'v*'  # 推送 v 开头的标签时触发
   workflow_dispatch:
     inputs:
       debug_mode:
