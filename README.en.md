@@ -39,7 +39,7 @@ cargo install --git https://github.com/ymc-github/i_edit_toml
 cargo install --git https://github.com/ymc-github/i_edit_toml --branch main
 
 # Specify tag
-cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.2.0
+cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.3.0
 ```
 
 ### Install from docker hub
@@ -105,7 +105,7 @@ Add dependency to `Cargo.toml`:
 
 ```toml
 [dependencies]
-i_edit_toml = "0.2"
+i_edit_toml = "0.3"
 ```
 
 Use in code:

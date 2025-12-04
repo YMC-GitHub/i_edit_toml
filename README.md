@@ -39,7 +39,7 @@ cargo install --git https://github.com/ymc-github/i_edit_toml
 cargo install --git https://github.com/ymc-github/i_edit_toml --branch main
 
 # 指定标签
-cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.2.0
+cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.3.0
 ```
 
 ### 从 docker hub 安装
@@ -105,7 +105,7 @@ i_edit_toml set -k package.edition -v "2021" -t string --in-place
 
 ```toml
 [dependencies]
-i_edit_toml = "0.2"
+i_edit_toml = "0.3"
 ```
 
 在代码中使用：
