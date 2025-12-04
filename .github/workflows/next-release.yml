@@ -25,7 +25,7 @@ on:
       docker_registries:
         description: 'Docker registries to push to (comma separated: ghcr.io,docker.io)'
         required: false
-        default: 'ghcr.io'
+        default: 'ghcr.io,docker.io'
         type: string
       use_china_mirror:
         description: 'Use China mirror for faster downloads'
