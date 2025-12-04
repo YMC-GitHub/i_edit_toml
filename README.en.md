@@ -26,27 +26,27 @@ cargo install i_edit_toml
 ### Install from source
 
 ```bash
-git clone https://github.com/YeMiancheng/i_edit_toml
+git clone https://github.com/ymc-github/i_edit_toml
 cd i_edit_toml
 cargo install --path .
 ```
 
 ```bash
 # Install from GitHub
-cargo install --git https://github.com/YeMiancheng/i_edit_toml
+cargo install --git https://github.com/ymc-github/i_edit_toml
 
 # Specify branch
-cargo install --git https://github.com/YeMiancheng/i_edit_toml --branch main
+cargo install --git https://github.com/ymc-github/i_edit_toml --branch main
 
 # Specify tag
-cargo install --git https://github.com/YeMiancheng/i_edit_toml --tag v0.2.0
+cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.2.0
 ```
 
 ### Install from docker hub
 ```bash
 #  from docker.io
-# docker pull docker.io/yemiancheng/i_edit_toml:latest
-docker pull yemiancheng/i_edit_toml:latest
+# docker pull docker.io/ymc-github/i_edit_toml:latest
+docker pull ymc-github/i_edit_toml:latest
 
 #  from ghcr.io
 # ghcr.io/<owner>/<repo>:latest
