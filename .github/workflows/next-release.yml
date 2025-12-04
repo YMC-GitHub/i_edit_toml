@@ -3,8 +3,9 @@ name: Next Build and Release
 on:
   push:
     tags:
-      - 'v*'  # v1.0.0, v2.3.4-beta.1 等
+      - 'v*'           # v1.0.0, v2.3.4-beta.1 等
       - '[0-9][0-9]*'  # 20251210, 1.2.3 等（至少两位数字开头）
+  
   workflow_dispatch:
     inputs:
       release:
@@ -43,21 +44,36 @@ jobs:
     name: Setup Platform Flags
     runs-on: ubuntu-latest
     outputs:
-      build_linux: ${{ steps.parse-platforms.outputs.build_linux }}
-      build_windows: ${{ steps.parse-platforms.outputs.build_windows }}
-      build_macos: ${{ steps.parse-platforms.outputs.build_macos }}
+      build_linux: ${{ steps.set-platforms.outputs.build_linux }}
+      build_windows: ${{ steps.set-platforms.outputs.build_windows }}
+      build_macos: ${{ steps.set-platforms.outputs.build_macos }}
       version: ${{ steps.get-version.outputs.version }}
-      has_binaries: ${{ steps.check-binaries.outputs.has_binaries }}
+      has_binaries: ${{ steps.set-platforms.outputs.has_binaries }}
       push_ghcr: ${{ steps.parse-registries.outputs.push_ghcr }}
       push_dockerhub: ${{ steps.parse-registries.outputs.push_dockerhub }}
       any_registry: ${{ steps.parse-registries.outputs.any_registry }}
       has_dockerhub_creds: ${{ steps.check-dockerhub-creds.outputs.has_dockerhub_creds }}
       repository_lower: ${{ steps.get-repo-lower.outputs.repository_lower }}
       binary_name_lower: ${{ steps.get-repo-lower.outputs.binary_name_lower }}
+      is_tag_push: ${{ steps.check-trigger.outputs.is_tag_push }}
+      should_release: ${{ steps.check-trigger.outputs.should_release }}
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Check trigger type
+        id: check-trigger
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            echo "is_tag_push=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "🚀 Tag push detected: ${{ github.ref_name }}"
+          else
+            echo "is_tag_push=false" >> $GITHUB_OUTPUT
+            echo "should_release=${{ inputs.release }}" >> $GITHUB_OUTPUT
+            echo "🔧 Manual workflow dispatch"
+          fi
       
       - name: Get repository name in lowercase
         id: get-repo-lower
@@ -69,34 +85,59 @@ jobs:
           echo "📁 Repository (lowercase): $REPO_LOWER"
           echo "📄 Binary name (lowercase): $BINARY_LOWER"
       
-      - name: Parse platforms input
-        id: parse-platforms
+      - name: Set platforms based on trigger type
+        id: set-platforms
         run: |
-          PLATFORMS=$(echo "${{ inputs.platforms }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
-          echo "Parsing platforms: $PLATFORMS"
-          
-          if [[ "$PLATFORMS" == *"linux"* ]]; then
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" ]]; then
+            # Tag 推送：默认构建所有平台
             echo "build_linux=true" >> $GITHUB_OUTPUT
-          else
-            echo "build_linux=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if [[ "$PLATFORMS" == *"windows"* ]]; then
             echo "build_windows=true" >> $GITHUB_OUTPUT
-          else
-            echo "build_windows=false" >> $GITHUB_OUTPUT
-          fi
-          
-          if [[ "$PLATFORMS" == *"macos"* ]]; then
             echo "build_macos=true" >> $GITHUB_OUTPUT
+            echo "has_binaries=true" >> $GITHUB_OUTPUT
+            echo "✅ Tag push: building all platforms"
           else
-            echo "build_macos=false" >> $GITHUB_OUTPUT
+            # workflow_dispatch：使用输入的参数
+            PLATFORMS=$(echo "${{ inputs.platforms }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+            echo "Parsing platforms: $PLATFORMS"
+            
+            if [[ "$PLATFORMS" == *"linux"* ]]; then
+              echo "build_linux=true" >> $GITHUB_OUTPUT
+            else
+              echo "build_linux=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if [[ "$PLATFORMS" == *"windows"* ]]; then
+              echo "build_windows=true" >> $GITHUB_OUTPUT
+            else
+              echo "build_windows=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if [[ "$PLATFORMS" == *"macos"* ]]; then
+              echo "build_macos=true" >> $GITHUB_OUTPUT
+            else
+              echo "build_macos=false" >> $GITHUB_OUTPUT
+            fi
+            
+            # 检查是否有任何二进制构建
+            if [[ "$PLATFORMS" == *"linux"* ]] || \
+               [[ "$PLATFORMS" == *"windows"* ]] || \
+               [[ "$PLATFORMS" == *"macos"* ]]; then
+              echo "has_binaries=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_binaries=false" >> $GITHUB_OUTPUT
+            fi
           fi
       
       - name: Parse docker registries
         id: parse-registries
         run: |
-          REGISTRIES=$(echo "${{ inputs.docker_registries }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            REGISTRIES=$(echo "${{ inputs.docker_registries }}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          else
+            # Tag 推送时使用默认值
+            REGISTRIES="ghcr.io,docker.io"
+          fi
+          
           echo "Parsing registries: $REGISTRIES"
           
           if [[ "$REGISTRIES" == *"ghcr.io"* ]] || [[ "$REGISTRIES" == *"ghcr"* ]]; then
@@ -142,17 +183,6 @@ jobs:
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           fi
           echo "🏷️ Version: $VERSION"
-      
-      - name: Check if any binaries will be built
-        id: check-binaries
-        run: |
-          if [[ "${{ inputs.platforms }}" == *"linux"* ]] || \
-             [[ "${{ inputs.platforms }}" == *"windows"* ]] || \
-             [[ "${{ inputs.platforms }}" == *"macos"* ]]; then
-            echo "has_binaries=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_binaries=false" >> $GITHUB_OUTPUT
-          fi
 
   build-linux:
     name: Build Linux Binary
@@ -323,7 +353,7 @@ jobs:
     permissions:
       contents: write
     if: >
-      ${{ inputs.release }} &&
+      needs.setup-platforms.outputs.should_release == 'true' &&
       needs.setup-platforms.outputs.has_binaries == 'true'
     
     steps:
@@ -414,7 +444,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: setup-platforms
     if: >
-      ${{ inputs.build_docker && needs.setup-platforms.outputs.any_registry == 'true' }}
+      ((github.event_name == 'push' && github.ref_type == 'tag' && 
+        needs.setup-platforms.outputs.any_registry == 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.build_docker && 
+        needs.setup-platforms.outputs.any_registry == 'true'))
     permissions:
       contents: read
       packages: write
@@ -427,7 +460,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
       
       - name: Log in to GHCR
-        if: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' && inputs.release }}
+        if: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' && needs.setup-platforms.outputs.should_release == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -437,7 +470,7 @@ jobs:
       - name: Log in to Docker Hub
         if: ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && 
                 needs.setup-platforms.outputs.has_dockerhub_creds == 'true' && 
-                inputs.release }}
+                needs.setup-platforms.outputs.should_release == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: docker.io
@@ -449,21 +482,23 @@ jobs:
         run: |
           TAGS=""
           
-          # GHCR tags - 使用全小写的仓库名称
+          # GHCR tags
           if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
-            if [ "${{ inputs.release }}" = "true" ]; then
+            if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ]; then
+              # 发布模式：推送到registry
               TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
               if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
                 TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:latest"
               fi
             else
+              # 非发布模式：本地构建
               TAGS="$TAGS,ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:standalone-${{ github.sha }}"
             fi
           fi
           
-          # Docker Hub tags (only if credentials available)
+          # Docker Hub tags
           if [ "${{ needs.setup-platforms.outputs.push_dockerhub }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_dockerhub_creds }}" = "true" ]; then
-            if [ "${{ inputs.release }}" = "true" ]; then
+            if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ]; then
               TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:${{ needs.setup-platforms.outputs.version }}"
               if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ needs.setup-platforms.outputs.version }}" = "latest" ]; then
                 TAGS="$TAGS,$DOCKERHUB_USERNAME/${{ needs.setup-platforms.outputs.binary_name_lower }}:latest"
@@ -483,16 +518,16 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: ${{ inputs.release }}
+          push: ${{ needs.setup-platforms.outputs.should_release == 'true' }}
           tags: ${{ steps.prepare-tags.outputs.tags }}
           build-args: |
-            USE_CHINA_MIRROR=${{ inputs.use_china_mirror }}
+            USE_CHINA_MIRROR=${{ github.event_name == 'workflow_dispatch' && inputs.use_china_mirror || 'false' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: ${{ !inputs.release && 'type=docker,dest=/tmp/image.tar' || '' }}
+          outputs: ${{ needs.setup-platforms.outputs.should_release != 'true' && 'type=docker,dest=/tmp/image.tar' || '' }}
       
       - name: Test Docker image locally (non-release)
-        if: ${{ !inputs.release }}
+        if: ${{ needs.setup-platforms.outputs.should_release != 'true' }}
         run: |
           echo "🔧 Testing standalone Docker image..."
           docker load -i /tmp/image.tar
@@ -502,14 +537,14 @@ jobs:
           echo "✅ Standalone image test complete"
       
       - name: Save local artifacts (non-release)
-        if: ${{ !inputs.release }}
+        if: ${{ needs.setup-platforms.outputs.should_release != 'true' }}
         run: |
           mkdir -p /tmp/local-artifacts
           cp /tmp/image.tar /tmp/local-artifacts/docker-image-local.tar
           echo "✅ Local artifacts saved"
       
       - name: Upload local artifacts (non-release)
-        if: ${{ !inputs.release }}
+        if: ${{ needs.setup-platforms.outputs.should_release != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: docker-image-local
@@ -534,12 +569,25 @@ jobs:
           echo "🎉 Build Pipeline Completed"
           echo "========================="
           echo ""
-          echo "⚙️ Configuration Summary:"
-          echo "  Release mode: ${{ inputs.release && '🚀 RELEASE' || '🔧 LOCAL BUILD' }}"
-          echo "  Platforms: ${{ inputs.platforms || 'None (Docker only)' }}"
-          echo "  Docker build: ${{ inputs.build_docker && '✅ Yes' || '⏸️ No' }}"
-          echo "  Docker registries: ${{ inputs.docker_registries || 'None' }}"
-          echo "  China mirror: ${{ inputs.use_china_mirror && '✅ Enabled' || '⏸️ Disabled' }}"
+          
+          # 触发类型
+          if [ "${{ needs.setup-platforms.outputs.is_tag_push }}" = "true" ]; then
+            echo "🚀 TRIGGER: Tag Push (${{ github.ref_name }})"
+            echo "⚙️ Configuration Summary:"
+            echo "  Release mode: 🚀 AUTOMATIC TAG RELEASE"
+            echo "  Platforms: All (linux,windows,macos)"
+            echo "  Docker build: ${{ needs.setup-platforms.outputs.any_registry == 'true' && '✅ Yes' || '⏸️ No' }}"
+            echo "  Docker registries: ${{ needs.setup-platforms.outputs.push_ghcr == 'true' && 'ghcr.io' || '' }} ${{ needs.setup-platforms.outputs.push_dockerhub == 'true' && 'docker.io' || '' }}"
+          else
+            echo "🔧 TRIGGER: Manual Workflow Dispatch"
+            echo "⚙️ Configuration Summary:"
+            echo "  Release mode: ${{ inputs.release && '🚀 RELEASE' || '🔧 LOCAL BUILD' }}"
+            echo "  Platforms: ${{ inputs.platforms || 'None (Docker only)' }}"
+            echo "  Docker build: ${{ inputs.build_docker && '✅ Yes' || '⏸️ No' }}"
+            echo "  Docker registries: ${{ inputs.docker_registries || 'None' }}"
+            echo "  China mirror: ${{ inputs.use_china_mirror && '✅ Enabled' || '⏸️ Disabled' }}"
+          fi
+          
           echo ""
           echo "📊 Build Results:"
           echo ""
@@ -552,7 +600,7 @@ jobs:
             echo "  🍎 macOS: ${{ needs.setup-platforms.outputs.build_macos && '✅ Built' || '⏸️ Skipped' }}"
             echo ""
             
-            if [ "${{ inputs.release }}" = "true" ]; then
+            if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ]; then
               echo "🚀 GitHub Release: ✅ Created"
               echo "  Version: ${{ needs.setup-platforms.outputs.version }}"
               echo "  Files: Binaries + SHA256/SHA512 checksums"
@@ -565,10 +613,10 @@ jobs:
           fi
           
           # Docker 状态
-          if [ "${{ inputs.build_docker }}" = "true" ]; then
+          if [ "${{ needs.setup-platforms.outputs.any_registry }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.is_tag_push }}" = "true" || "${{ inputs.build_docker }}" = "true" ]; then
             echo "🐳 Docker Image:"
             
-            if [ "${{ inputs.release }}" = "true" ]; then
+            if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ]; then
               echo "  Mode: 🚀 Pushed to registry"
               if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
                 echo "  ✅ GHCR: ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}:${{ needs.setup-platforms.outputs.version }}"
@@ -591,10 +639,10 @@ jobs:
           
           echo ""
           echo "🔗 Access Links:"
-          if [ "${{ inputs.release }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_binaries }}" = "true" ]; then
+          if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.has_binaries }}" = "true" ]; then
             echo "  📦 GitHub Release: https://github.com/${{ github.repository }}/releases"
           fi
-          if [ "${{ inputs.build_docker }}" = "true" ] && [ "${{ inputs.release }}" = "true" ]; then
+          if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ] && [ "${{ needs.setup-platforms.outputs.any_registry }}" = "true" ]; then
             if [ "${{ needs.setup-platforms.outputs.push_ghcr }}" = "true" ]; then
               echo "  🐳 GHCR: https://ghcr.io/${{ needs.setup-platforms.outputs.repository_lower }}"
             fi
@@ -605,7 +653,7 @@ jobs:
           
           echo ""
           echo "⏱️ Next Steps:"
-          if [ "${{ inputs.release }}" = "true" ]; then
+          if [ "${{ needs.setup-platforms.outputs.should_release }}" = "true" ]; then
             echo "  1. Verify the released binaries on GitHub"
             echo "  2. Test the Docker image from registry"
             echo "  3. Update documentation with new version"
