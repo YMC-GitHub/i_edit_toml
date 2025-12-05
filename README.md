@@ -39,7 +39,7 @@ cargo install --git https://github.com/ymc-github/i_edit_toml
 cargo install --git https://github.com/ymc-github/i_edit_toml --branch main
 
 # 指定标签
-cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.3.0
+cargo install --git https://github.com/ymc-github/i_edit_toml --tag v0.4.0
 ```
 
 ### 从 docker hub 安装
@@ -87,7 +87,7 @@ i_edit_toml get -k dependencies --output json-pretty
 
 ```bash
 # 基本使用（设置 package.version）
-i_edit_toml set -f Cargo.toml -k package.version -v "0.3.0" --in-place
+i_edit_toml set -f Cargo.toml -k package.version -v "0.4.0" --in-place
 
 # 设置数组元素
 i_edit_toml set -k package.authors[0] -v "New Author <author@example.com>" --in-place
@@ -105,7 +105,7 @@ i_edit_toml set -k package.edition -v "2021" -t string --in-place
 
 ```toml
 [dependencies]
-i_edit_toml = "0.3"
+i_edit_toml = "0.4"
 ```
 
 在代码中使用：
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let set_config = SetConfig {
         file_path: "Cargo.toml".to_string(),
         field_path: "package.version".to_string(),
-        value: "0.3.0".to_string(),
+        value: "0.4.0".to_string(),
         value_type: None,
         create_missing: false,
     };

@@ -1,6 +1,6 @@
 [package]
 name = "i_edit_toml"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "A lightweight, high-performance tool for Editing TOML based on field paths"
 authors = ["YeMiancheng <ymc.github@gmail.com>"]
