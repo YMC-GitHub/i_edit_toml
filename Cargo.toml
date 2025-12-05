@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ymc-github/i_edit_toml"
 readme = "README.md"
 keywords = ["i_edit_toml", "edit","cli"]
-categories = ["command-line-utilities", "development-tools", "configuration"]
+categories = ["command-line-utilities", "development-tools", "config"]
 documentation = "https://docs.rs/i_edit_toml"
 
 [dependencies]
